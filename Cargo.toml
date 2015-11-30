@@ -1,0 +1,17 @@
+[package]
+name = "emulition"
+description = "A coalition of emulators"
+repository = "https://github.com/jackpot51/emulition"
+version = "0.0.1"
+license-file = "LICENSE"
+readme = "README.md"
+authors = ["Jeremy Soller <jackpot51@gmail.com>"]
+
+[[bin]]
+name = "emulition"
+path = "src/main.rs"
+
+[dependencies]
+sdl2 = "0.9.1"
+sdl2_image = "0.3"
+sdl2_ttf = "0.9.1"
