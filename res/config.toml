@@ -1,0 +1,39 @@
+[ds]
+name = "DS"
+command = "desmume %r"
+image = "res/ds.png"
+
+[gamecube]
+name = "Gamecube"
+command = "dolphin-emu -b -e %r"
+image = "res/gamecube.png"
+
+[gba]
+name = "Gameboy Advance"
+command = "vba -F %r"
+image = "res/gba.png"
+
+[gbc]
+name = "Gameboy Color"
+command = "vba -F %r"
+image = "res/gbc.png"
+
+[n64]
+name = "Nintendo 64"
+command = "mupen64plus --fullscreen %r"
+image = "res/n64.png"
+
+[nes]
+name = "NES"
+command = "nestopia -f %r"
+image = "res/nes.png"
+
+[snes]
+name = "SNES"
+command = "zsnes %r"
+image = "res/snes.png"
+
+[wii]
+name = "Wii"
+command = "dolphin-emu -b -e %r"
+image = "res/wii.png"

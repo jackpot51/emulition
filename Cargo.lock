@@ -2,9 +2,11 @@
 name = "emulition"
 version = "0.0.1"
 dependencies = [
+ "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2_image 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2_ttf 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -101,6 +103,14 @@ dependencies = [
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2-sys 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "toml"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

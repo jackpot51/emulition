@@ -12,6 +12,8 @@ name = "emulition"
 path = "src/main.rs"
 
 [dependencies]
-sdl2 = "0.9.1"
+rustc-serialize = "0.3"
+sdl2 = "0.9"
 sdl2_image = "0.3"
-sdl2_ttf = "0.9.1"
+sdl2_ttf = "0.9"
+toml = "0.1"
