@@ -240,8 +240,6 @@ enum View {
 }
 
 fn main(){
-    doperoms::list("Nintendo_64");
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let controller_subsystem = sdl_context.game_controller().unwrap();

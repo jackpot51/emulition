@@ -1,5 +1,6 @@
 [ds]
 name = "DS"
+doperoms = "Nintendo_Ds"
 image = "res/ds.png"
 roms = "roms/ds"
 program = "desmume"
@@ -7,6 +8,7 @@ args = ["%r"]
 
 [gamecube]
 name = "Gamecube"
+doperoms = "Nintendo_Gamecube"
 image = "res/gamecube.png"
 roms = "roms/gamecube"
 program = "dolphin-emu"
@@ -14,6 +16,7 @@ args = ["-b", "-e", "%r"]
 
 [gba]
 name = "Gameboy Advance"
+doperoms = "Gameboy_Advance_Gba"
 image = "res/gba.png"
 roms = "roms/gba"
 program = "vba"
@@ -21,6 +24,7 @@ args = ["-F", "%r"]
 
 [gbc]
 name = "Gameboy Color"
+doperoms = "Gameboy_And_Gbc"
 image = "res/gbc.png"
 roms = "roms/gbc"
 program = "vba"
@@ -28,6 +32,7 @@ args = ["-F", "%r"]
 
 [n64]
 name = "Nintendo 64"
+doperoms = "Nintendo_64"
 image = "res/n64.png"
 roms = "roms/n64"
 program = "mupen64plus"
@@ -35,6 +40,7 @@ args = ["--fullscreen", "%r"]
 
 [nes]
 name = "NES"
+doperoms = "Nintendo_Nes"
 image = "res/nes.png"
 roms = "roms/nes"
 program = "nestopia"
@@ -42,6 +48,7 @@ args = ["-f", "%r"]
 
 [snes]
 name = "SNES"
+doperoms = "Super_Nintendo_Snes"
 image = "res/snes.png"
 roms = "roms/snes"
 program = "zsnes"
@@ -49,6 +56,7 @@ args = ["%r"]
 
 [wii]
 name = "Wii"
+doperoms = "Nintendo_Wii"
 image = "res/wii.png"
 roms = "roms/wii"
 program = "dolphin-emu"
