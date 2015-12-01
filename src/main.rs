@@ -199,6 +199,7 @@ impl Rom {
                         let ratio = downloaded as f64 / total as f64;
                         let pixels = (w as f64 * ratio) as u32;
                         if pixels > 0 {
+                            renderer.set_draw_color(Color::RGB(0, 255, 0));
                             renderer.fill_rect(Rect::new(x, y, pixels, 32).unwrap().unwrap());
                         }
                         format!("{}: {:.1}%", self.config.name, ratio * 100.0)
@@ -428,10 +429,9 @@ fn main(){
 
         offset += scroll as i32;
 
+        let highlight_color = Color::RGB(224, 224, 224);
         renderer.set_draw_color(Color::RGB(255, 255, 255));
         renderer.clear();
-
-        renderer.set_draw_color(Color::RGB(192, 192, 192));
 
         let mut x = 0;
         let mut y = 0;
@@ -452,6 +452,7 @@ fn main(){
                         s = s * 3;
 
                         if cursor.inside(x, y, s, s) {
+                            renderer.set_draw_color(highlight_color);
                             renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                             if forward {
@@ -480,6 +481,7 @@ fn main(){
                     y += s;
 
                     if cursor.inside(x, y, s, 32) {
+                        renderer.set_draw_color(highlight_color);
                         renderer.fill_rect(Rect::new(x, y, s as u32, 32).unwrap().unwrap());
                         if forward {
                             new_view = View::Emulator(key.clone(), false);
@@ -497,6 +499,7 @@ fn main(){
                                     let ratio = downloaded as f64 / total as f64;
                                     let pixels = (s as f64 * ratio) as u32;
                                     if pixels > 0 {
+                                        renderer.set_draw_color(Color::RGB(0, 255, 0));
                                         renderer.fill_rect(Rect::new(x, y, pixels, 32).unwrap().unwrap());
                                     }
                                     format!("Internet: {:.1}%", ratio * 100.0)
@@ -513,6 +516,7 @@ fn main(){
                         y += 32;
                     } else{
                         if cursor.inside(x, y, s, 32) {
+                            renderer.set_draw_color(highlight_color);
                             renderer.fill_rect(Rect::new(x, y, s as u32, 32).unwrap().unwrap());
                             if forward {
                                 new_view = View::Emulator(key.clone(), true);
@@ -530,6 +534,7 @@ fn main(){
                         for rom in emulator.downloads.iter() {
                             if y + 96 >= 0 && y < height {
                                 if cursor.inside(x, y, width - x, 96) {
+                                    renderer.set_draw_color(highlight_color);
                                     renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 96).unwrap().unwrap());
                                     if forward {
                                         download_option = Some(rom.clone());
@@ -571,6 +576,7 @@ fn main(){
                             if let Some(rom) = emulator.roms.get(index) {
                                 if y + s >= 0 && y < height {
                                     if cursor.inside(x, y, s, s) {
+                                        renderer.set_draw_color(highlight_color);
                                         renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                                         if forward {
@@ -601,6 +607,7 @@ fn main(){
             View::Overview => {
                 for (key, emulator) in emulators.iter() {
                     if cursor.inside(x, y, s, s) {
+                        renderer.set_draw_color(highlight_color);
                         renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                         if forward {
