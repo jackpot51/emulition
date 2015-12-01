@@ -115,6 +115,11 @@ impl Cursor {
         self.set(renderer, x, y);
     }
 
+    pub fn inside(&self, x: i32, y: i32, w: i32, h: i32) -> bool {
+        self.x >= x as f32 && self.x < (x as f32 + w as f32)
+        && self.y >= y as f32 && self.y < (y as f32 + h as f32)
+    }
+
     pub fn draw(&self, renderer: &mut Renderer) {
         self.texture.draw(renderer, (self.x - 26.0) as i32, (self.y - 4.0) as i32);
     }
@@ -172,10 +177,10 @@ impl Rom {
     }
 
     pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
+        self.name.draw(renderer, x + 8, y + 4, w - 16, 24);
         if let Some(ref image) = self.image {
-            image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
+            image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
         }
-        self.name.draw(renderer, x, y + h - 64, w, 64);
     }
 }
 
@@ -194,6 +199,7 @@ struct Emulator {
     image: ScaledTexture,
     roms: Vec<Rom>,
     doperoms: Option<doperoms::List>,
+    downloads: Vec<RomConfig>,
     config: EmulatorConfig
 }
 
@@ -221,25 +227,14 @@ impl Emulator {
             image: ScaledTexture::new(renderer.load_texture(&Path::new(&config.image)).unwrap()),
             roms: roms,
             doperoms: Some(doperoms::List::new(&config.doperoms)),
+            downloads: Vec::new(),
             config: config
         }
     }
 
     pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
-        self.image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
-        self.name.draw(renderer, x, y + h - 64, w, 32);
-
-        if let Some(ref doperoms) = self.doperoms {
-            let text = match doperoms.progress() {
-                Progress::Connecting => "Connecting".to_string(),
-                Progress::InProgress(downloaded, total) => format!("{:.1}%", downloaded as f64 * 100.0 / total as f64),
-                Progress::Error(error) => error,
-                Progress::Complete => "Complete".to_string()
-            };
-
-            let texture = CenteredTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
-            texture.draw(renderer, x, y + h - 32, w, 32);
-        }
+        self.name.draw(renderer, x + 8, y + 4, w - 16, 24);
+        self.image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
     }
 
     pub fn run(&self, rom: &Rom){
@@ -254,12 +249,31 @@ impl Emulator {
 
         println!("status: {}", command.status().unwrap());
     }
+
+    pub fn update(&mut self, renderer: &Renderer, font: &Font) {
+        let take_doperoms = if let Some(ref doperoms) = self.doperoms {
+            match doperoms.progress() {
+                Progress::Complete => true,
+                _ => false
+            }
+        } else {
+            false
+        };
+
+        if take_doperoms {
+            if let Some(doperoms) = self.doperoms.take() {
+                for config in doperoms.result() {
+                    self.downloads.push(config);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
 enum View {
     Rom(String, usize),
-    Emulator(String),
+    Emulator(String, bool),
     Overview
 }
 
@@ -307,9 +321,11 @@ fn main(){
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let mut view = View::Overview;
+    let mut offset = 0;
     'running: loop {
         let mut forward = false;
         let mut backward = false;
+        let mut scroll = 0;
 
         for event in event_pump.poll_iter() {
             match event {
@@ -321,6 +337,7 @@ fn main(){
                 Event::MouseButtonDown { mouse_btn: Mouse::Left, .. } => forward = true,
                 Event::MouseButtonDown { mouse_btn: Mouse::Right, .. } => backward = true,
                 Event::MouseMotion { x, y, .. } => cursor.set(&renderer, x as f32, y as f32),
+                Event::MouseWheel { y, .. } => scroll += y,
                 _ => {}
             }
         }
@@ -336,6 +353,12 @@ fn main(){
         }
         if event_pump.keyboard_state().is_scancode_pressed(Scancode::Down) {
             cursor.offset(&renderer, 0.0, 8.0);
+        }
+        if event_pump.keyboard_state().is_scancode_pressed(Scancode::PageUp) {
+            scroll -= 1;
+        }
+        if event_pump.keyboard_state().is_scancode_pressed(Scancode::PageDown) {
+            scroll += 1;
         }
 
         for controller in controllers.iter() {
@@ -359,6 +382,8 @@ fn main(){
             }
         }
 
+        offset += scroll;
+
         renderer.set_draw_color(Color::RGB(255, 255, 255));
         renderer.clear();
 
@@ -366,19 +391,23 @@ fn main(){
 
         let mut x = 0;
         let mut y = 0;
-        let mut s = min(renderer.output_size().unwrap().0 as i32 / 4, renderer.output_size().unwrap().1 as i32 / 3);
+        let width = renderer.output_size().unwrap().0 as i32;
+        let height = renderer.output_size().unwrap().1 as i32;
+        let mut s = min(width / 4, height / 3);
 
         let mut new_view = view.clone();
         match view {
             View::Rom(ref key, index) => {
                 if let Some(emulator) = emulators.get(key) {
                     emulator.draw(&mut renderer, &font, x, y, s, s);
+                    y += s;
 
-                    x = s;
-                    y = 0;
-                    s = s * 3;
                     if let Some(rom) = emulator.roms.get(index) {
-                        if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
+                        x = s;
+                        y = 0;
+                        s = s * 3;
+
+                        if cursor.inside(x, y, s, s) {
                             renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                             if forward {
@@ -392,38 +421,97 @@ fn main(){
                         y = 0;
 
                         if backward {
-                            new_view = View::Emulator(key.clone());
+                            new_view = View::Emulator(key.clone(), false);
                         }
                     } else {
-                        new_view = View::Emulator(key.clone());
+                        new_view = View::Emulator(key.clone(), false);
                     }
                 } else {
                     new_view = View::Overview
                 }
             },
-            View::Emulator(ref key) => {
+            View::Emulator(ref key, downloads) => {
                 if let Some(emulator) = emulators.get(key) {
                     emulator.draw(&mut renderer, &font, x, y, s, s);
                     y += s;
 
-                    x = s;
-                    y = 0;
-                    for index in 0 .. emulator.roms.len() {
-                        if let Some(rom) = emulator.roms.get(index) {
-                            if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
-                                renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
+                    if cursor.inside(x, y, s, 32) {
+                        renderer.fill_rect(Rect::new(x, y, s as u32, 32).unwrap().unwrap());
+                        if forward {
+                            new_view = View::Emulator(key.clone(), false);
+                        }
+                    }
+                    let texture = NormalTexture::new(font.render(&renderer, &format!("Installed: {}", emulator.roms.len()), Color::RGB(0, 0, 0)));
+                    texture.draw(&mut renderer, x + 8, y + 4);
+                    y += 32;
 
-                                if forward {
-                                    new_view = View::Rom(key.clone(), index);
+                    if let Some(ref doperoms) = emulator.doperoms {
+                        let text = match doperoms.progress() {
+                            Progress::Connecting => "Internet: ...".to_string(),
+                            Progress::InProgress(downloaded, total) => {
+                                if total > 0 {
+                                    let ratio = downloaded as f64 / total as f64;
+                                    let pixels = (s as f64 * ratio) as u32;
+                                    if pixels > 0 {
+                                        renderer.fill_rect(Rect::new(x, y, pixels, 32).unwrap().unwrap());
+                                    }
+                                    format!("Internet: {:.1}%", ratio * 100.0)
+                                } else {
+                                    format!("Internet: ?%")
                                 }
+                            },
+                            Progress::Error(error) => format!("Internet: {}", error),
+                            Progress::Complete => "Internet: Complete".to_string()
+                        };
+
+                        let texture = NormalTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
+                        texture.draw(&mut renderer, x + 8, y + 4);
+                        y += 32;
+                    } else{
+                        if cursor.inside(x, y, s, 32) {
+                            renderer.fill_rect(Rect::new(x, y, s as u32, 32).unwrap().unwrap());
+                            if forward {
+                                new_view = View::Emulator(key.clone(), true);
                             }
+                        }
+                        let texture = NormalTexture::new(font.render(&renderer, &format!("Internet: {}", emulator.downloads.len()), Color::RGB(0, 0, 0)));
+                        texture.draw(&mut renderer, x + 8, y + 4);
+                        y += 32;
+                    }
 
-                            rom.draw(&mut renderer, &font, x, y, s, s);
+                    x = s;
+                    y = offset;
+                    if downloads {
+                        for rom in emulator.downloads.iter() {
+                            if y + 32 >= 0 && y < height {
+                                if cursor.inside(x, y, width - x, 32) {
+                                    renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 32).unwrap().unwrap());
+                                }
+                                let texture = NormalTexture::new(font.render(&renderer, &rom.name, Color::RGB(0, 0, 0)));
+                                texture.draw(&mut renderer, x + 8, y + 4);
+                            }
+                            y += 32;
+                        }
+                    } else {
+                        for index in 0 .. emulator.roms.len() {
+                            if let Some(rom) = emulator.roms.get(index) {
+                                if y + s >= 0 && y < height {
+                                    if cursor.inside(x, y, s, s) {
+                                        renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
-                            x += s;
-                            if x + s > renderer.output_size().unwrap().0 as i32 {
-                                x = s;
-                                y += s;
+                                        if forward {
+                                            new_view = View::Rom(key.clone(), index);
+                                        }
+                                    }
+
+                                    rom.draw(&mut renderer, &font, x, y, s, s);
+                                }
+
+                                x += s;
+                                if x + s > renderer.output_size().unwrap().0 as i32 {
+                                    x = s;
+                                    y += s;
+                                }
                             }
                         }
                     }
@@ -437,11 +525,11 @@ fn main(){
             },
             View::Overview => {
                 for (key, emulator) in emulators.iter() {
-                    if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
+                    if cursor.inside(x, y, s, s) {
                         renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                         if forward {
-                            new_view = View::Emulator(key.clone());
+                            new_view = View::Emulator(key.clone(), false);
                         }
                     }
 
@@ -463,6 +551,10 @@ fn main(){
         if new_view != view {
             view = new_view;
         } else {
+            for (_, mut emulator) in emulators.iter_mut() {
+                emulator.update(&renderer, &font);
+            }
+
             std::thread::sleep(Duration::from_millis(1000/60));
         }
     }

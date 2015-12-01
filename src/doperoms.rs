@@ -110,7 +110,9 @@ fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
                 }
             }
 
-            roms.push(entry);
+            if entry.file != "No Roms" {
+                roms.push(entry);
+            }
         }
     }
 
