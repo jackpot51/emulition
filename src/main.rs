@@ -4,6 +4,7 @@ extern crate sdl2_image;
 extern crate sdl2_ttf;
 extern crate toml;
 
+use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Read;
@@ -21,10 +22,75 @@ use sdl2::render::{Renderer, Texture};
 
 use sdl2_image::LoadTexture;
 
+struct NormalTexture {
+    texture: Texture
+}
+
+impl NormalTexture {
+    pub fn new(texture: Texture) -> NormalTexture {
+        NormalTexture {
+            texture: texture
+        }
+    }
+
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32) {
+        let query = self.texture.query();
+        renderer.copy(&self.texture, None, Rect::new(x, y, query.width, query.height).unwrap());
+    }
+}
+
+struct CenteredTexture {
+    texture: Texture
+}
+
+impl CenteredTexture {
+    pub fn new(texture: Texture) -> CenteredTexture {
+        CenteredTexture {
+            texture: texture
+        }
+    }
+
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
+        let query = self.texture.query();
+        let w2 = query.width as i32;
+        let h2 = query.height as i32;
+        let x2 = x + (w - w2)/2;
+        let y2 = y + (h - h2)/2;
+        if h2 > 0 && w2 > 0 {
+            renderer.copy(&self.texture, None, Rect::new(x2, y2, w2 as u32, h2 as u32).unwrap());
+        }
+    }
+}
+
+struct ScaledTexture {
+    texture: Texture
+}
+
+impl ScaledTexture {
+    pub fn new(texture: Texture) -> ScaledTexture {
+        ScaledTexture {
+            texture: texture
+        }
+    }
+
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
+        let query = self.texture.query();
+        let aspect = query.width as f32 / query.height as f32;
+        let w2 = (aspect * h as f32).min(w as f32) as i32;
+        let h2 = (w as f32 / aspect).min(h as f32) as i32;
+        let x2 = x + (w - w2)/2;
+        let y2 = y + (h - h2)/2;
+        if h2 > 0 && w2 > 0 {
+            renderer.copy(&self.texture, None, Rect::new(x2, y2, w2 as u32, h2 as u32).unwrap());
+        }
+    }
+}
+
+
 struct Cursor {
     pub x: f32,
     pub y: f32,
-    texture: Texture,
+    texture: NormalTexture,
 }
 
 impl Cursor {
@@ -32,7 +98,7 @@ impl Cursor {
         Cursor {
             x: 0.0,
             y: 0.0,
-            texture: renderer.load_texture(&Path::new(image)).unwrap(),
+            texture: NormalTexture::new(renderer.load_texture(&Path::new(image)).unwrap()),
         }
     }
 
@@ -48,7 +114,7 @@ impl Cursor {
     }
 
     pub fn draw(&self, renderer: &mut Renderer) {
-        renderer.copy(&self.texture, None, Rect::new((self.x - 26.0) as i32, (self.y - 4.0) as i32, 64, 64).unwrap());
+        self.texture.draw(renderer, (self.x - 26.0) as i32, (self.y - 4.0) as i32);
     }
 }
 
@@ -76,39 +142,29 @@ struct RomConfig {
 }
 
 struct Rom {
-    name: Texture,
-    image: Option<Texture>,
+    name: CenteredTexture,
+    image: Option<ScaledTexture>,
     config: RomConfig,
 }
 
 impl Rom {
     pub fn new(renderer: &Renderer, font: &Font, config: RomConfig) -> Rom {
         Rom {
-            name: font.render(&renderer, &config.name, Color::RGBA(0, 0, 0, 255)),
-            image: renderer.load_texture(&Path::new(&config.image)).ok(),
+            name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
+            image: if let Some(texture) = renderer.load_texture(&Path::new(&config.image)).ok() {
+                Some(ScaledTexture::new(texture))
+            } else {
+                None
+            },
             config: config
         }
     }
 
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: u32, h: u32) {
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
         if let Some(ref image) = self.image {
-            let query = image.query();
-            let aspect = query.width as f32 / query.height as f32;
-    		let w2 = (aspect * h as f32).min(w as f32) as u32;
-    		let h2 = (w as f32 / aspect).min(h as f32) as u32;
-            let x2 = x + (w - w2) as i32/2;
-            let y2 = y + (h - h2) as i32/2;
-            renderer.copy(&image, None, Rect::new(x2, y2, w2, h2).unwrap());
+            image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
         }
-
-        {
-            let query = self.name.query();
-            let w2 = query.width;
-            let h2 = query.height;
-            let x2 = x + (w - w2) as i32/2;
-            let y2 = y + h as i32;
-            renderer.copy(&self.name, None, Rect::new(x2, y2, w2, h2).unwrap());
-        }
+        self.name.draw(renderer, x, y + h - 64, w, 64);
     }
 }
 
@@ -122,8 +178,8 @@ struct EmulatorConfig {
 }
 
 struct Emulator {
-    name: Texture,
-    image: Texture,
+    name: CenteredTexture,
+    image: ScaledTexture,
     roms: Vec<Rom>,
     config: EmulatorConfig
 }
@@ -148,32 +204,16 @@ impl Emulator {
         roms.sort_by(|a, b| a.config.name.cmp(&b.config.name));
 
         Emulator {
-            name: font.render(&renderer, &config.name, Color::RGBA(0, 0, 0, 255)),
-            image: renderer.load_texture(&Path::new(&config.image)).unwrap(),
+            name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
+            image: ScaledTexture::new(renderer.load_texture(&Path::new(&config.image)).unwrap()),
             roms: roms,
             config: config
         }
     }
 
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: u32, h: u32) {
-        {
-            let query = self.image.query();
-            let aspect = query.width as f32 / query.height as f32;
-    		let w2 = (aspect * h as f32).min(w as f32) as u32;
-    		let h2 = (w as f32 / aspect).min(h as f32) as u32;
-            let x2 = x + (w - w2) as i32/2;
-            let y2 = y + (h - h2) as i32/2;
-            renderer.copy(&self.image, None, Rect::new(x2, y2, w2, h2).unwrap());
-        }
-
-        {
-            let query = self.name.query();
-            let w2 = query.width;
-            let h2 = query.height;
-            let x2 = x + (w - w2) as i32/2;
-            let y2 = y + h as i32;
-            renderer.copy(&self.name, None, Rect::new(x2, y2, w2, h2).unwrap());
-        }
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
+        self.image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
+        self.name.draw(renderer, x, y + h as i32 - 64, w, 64);
     }
 
     pub fn run(&self, rom: &Rom){
@@ -205,6 +245,7 @@ fn main(){
 
     let window = video_subsystem.window("emulition", 1024, 768)
         .position_centered()
+        .resizable()
         .opengl()
         .build()
         .unwrap();
@@ -221,6 +262,9 @@ fn main(){
     let mut cursor = Cursor::new(&renderer, "res/cursor.png");
 
     let font = Font::new("res/DroidSans.ttf", 24);
+
+    let back = font.render(&renderer, "< Back", Color::RGB(0, 0, 0));
+    let download = font.render(&renderer, "Download ROMs", Color::RGB(0, 0, 0));
 
     let mut emulators = BTreeMap::new();
 
@@ -299,29 +343,29 @@ fn main(){
 
         let mut x = 0;
         let mut y = 0;
-        let mut s = renderer.output_size().unwrap().0 / 4;
+        let mut s = min(renderer.output_size().unwrap().0 as i32 / 4, renderer.output_size().unwrap().1 as i32 / 3);
 
         let mut new_view = view.clone();
         match view {
             View::Rom(ref key, index) => {
                 if let Some(emulator) = emulators.get(key) {
-                    emulator.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+                    emulator.draw(&mut renderer, x, y, s, s);
 
-                    x = s as i32;
+                    x = s;
                     y = 0;
                     s = s * 3;
                     if let Some(rom) = emulator.roms.get(index) {
-                        if cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
-                            renderer.fill_rect(Rect::new(x, y, s, s).unwrap().unwrap());
+                        if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
+                            renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                             if forward {
                                 emulator.run(rom);
                             }
                         }
 
-                        rom.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+                        rom.draw(&mut renderer, x, y, s, s);
 
-                        x = s as i32;
+                        x = s;
                         y = 0;
 
                         if backward {
@@ -336,27 +380,27 @@ fn main(){
             },
             View::Emulator(ref key) => {
                 if let Some(emulator) = emulators.get(key) {
-                    emulator.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+                    emulator.draw(&mut renderer, x, y, s, s);
+                    y += s;
 
-                    x = s as i32;
+                    x = s;
                     y = 0;
                     for index in 0 .. emulator.roms.len() {
                         if let Some(rom) = emulator.roms.get(index) {
-                            if cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
-                                renderer.fill_rect(Rect::new(x, y, s, s).unwrap().unwrap());
+                            if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
+                                renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                                 if forward {
                                     new_view = View::Rom(key.clone(), index);
-                                    //emulator.run(rom);
                                 }
                             }
 
-                            rom.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+                            rom.draw(&mut renderer, x, y, s, s);
 
-                            x += s as i32;
-                            if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
-                                x = s as i32;
-                                y += s as i32;
+                            x += s;
+                            if x + s > renderer.output_size().unwrap().0 as i32 {
+                                x = s;
+                                y += s;
                             }
                         }
                     }
@@ -370,20 +414,20 @@ fn main(){
             },
             View::Overview => {
                 for (key, emulator) in emulators.iter() {
-                    if cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
-                        renderer.fill_rect(Rect::new(x, y, s, s).unwrap().unwrap());
+                    if cursor.x >= x as f32 && cursor.x < (x + s) as f32 && cursor.y >= y as f32 && cursor.y < (y + s) as f32 {
+                        renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                         if forward {
                             new_view = View::Emulator(key.clone());
                         }
                     }
 
-                    emulator.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+                    emulator.draw(&mut renderer, x, y, s, s);
 
-                    x += s as i32;
-                    if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                    x += s;
+                    if x + s > renderer.output_size().unwrap().0 as i32 {
                         x = 0;
-                        y += s as i32;
+                        y += s;
                     }
                 }
             }
