@@ -8,7 +8,7 @@ use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -150,7 +150,7 @@ pub enum Progress {
     Complete,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RomConfig {
     pub name: String,
     pub file: String,
@@ -158,26 +158,50 @@ pub struct RomConfig {
 }
 
 struct Rom {
-    name: CenteredTexture,
     image: Option<ScaledTexture>,
+    doperoms: Option<doperoms::Download>,
     config: RomConfig,
 }
 
 impl Rom {
     pub fn new(renderer: &Renderer, font: &Font, config: RomConfig) -> Rom {
         Rom {
-            name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
             image: if let Some(texture) = renderer.load_texture(&Path::new(&config.image)).ok() {
                 Some(ScaledTexture::new(texture))
             } else {
                 None
             },
+            doperoms: None,
             config: config
         }
     }
 
     pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
-        self.name.draw(renderer, x + 8, y + 4, w - 16, 24);
+        let text = if let Some(ref doperoms) = self.doperoms {
+            match doperoms.progress() {
+                Progress::Connecting => format!("{}: ...", self.config.name),
+                Progress::InProgress(downloaded, total) => {
+                    if total > 0 {
+                        let ratio = downloaded as f64 / total as f64;
+                        let pixels = (w as f64 * ratio) as u32;
+                        if pixels > 0 {
+                            renderer.fill_rect(Rect::new(x, y, pixels, 32).unwrap().unwrap());
+                        }
+                        format!("{}: {:.1}%", self.config.name, ratio * 100.0)
+                    } else {
+                        format!("{}: ?%", self.config.name)
+                    }
+                },
+                Progress::Error(error) => format!("{}: {}", self.config.name, error),
+                Progress::Complete => format!("{}: Complete", self.config.name)
+            }
+        } else {
+            self.config.name.clone()
+        };
+
+        let texture = CenteredTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
+        texture.draw(renderer, x + 8, y + 4, w - 16, 24);
+
         if let Some(ref image) = self.image {
             image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
         }
@@ -250,7 +274,7 @@ impl Emulator {
         println!("status: {}", command.status().unwrap());
     }
 
-    pub fn update(&mut self, renderer: &Renderer, font: &Font) {
+    pub fn update(&mut self) {
         let take_doperoms = if let Some(ref doperoms) = self.doperoms {
             match doperoms.progress() {
                 Progress::Complete => true,
@@ -382,7 +406,7 @@ fn main(){
             }
         }
 
-        offset += scroll;
+        offset += scroll * 32;
 
         renderer.set_draw_color(Color::RGB(255, 255, 255));
         renderer.clear();
@@ -431,7 +455,7 @@ fn main(){
                 }
             },
             View::Emulator(ref key, downloads) => {
-                if let Some(emulator) = emulators.get(key) {
+                if let Some(mut emulator) = emulators.get_mut(key) {
                     emulator.draw(&mut renderer, &font, x, y, s, s);
                     y += s;
 
@@ -482,15 +506,40 @@ fn main(){
                     x = s;
                     y = offset;
                     if downloads {
+                        let mut download_option = None;
                         for rom in emulator.downloads.iter() {
                             if y + 32 >= 0 && y < height {
                                 if cursor.inside(x, y, width - x, 32) {
                                     renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 32).unwrap().unwrap());
+                                    if forward {
+                                        download_option = Some(rom.clone());
+                                    }
                                 }
                                 let texture = NormalTexture::new(font.render(&renderer, &rom.name, Color::RGB(0, 0, 0)));
                                 texture.draw(&mut renderer, x + 8, y + 4);
                             }
                             y += 32;
+                        }
+
+                        if let Some(mut config) = download_option.take() {
+                            {
+                                let mut image_path = PathBuf::from("roms");
+                                image_path.push(&key);
+                                image_path.push(&config.name);
+                                image_path.push("image.jpg");
+                                doperoms::Download::new(&config.image, &image_path).result();
+                                if let Some(image) = image_path.to_str() {
+                                    config.image = image.to_string();
+                                }
+                            }
+
+                            let mut rom = Rom::new(&renderer, &font, config);
+                            let mut rom_path = PathBuf::from("roms");
+                            rom_path.push(&key);
+                            rom_path.push(&rom.config.name);
+                            rom_path.push(&rom.config.file);
+                            rom.doperoms = Some(doperoms::Download::rom(&emulator.config.doperoms, &rom.config.file, &rom_path));
+                            emulator.roms.push(rom);
                         }
                     } else {
                         for index in 0 .. emulator.roms.len() {
@@ -508,6 +557,7 @@ fn main(){
                                 }
 
                                 x += s;
+
                                 if x + s > renderer.output_size().unwrap().0 as i32 {
                                     x = s;
                                     y += s;
@@ -552,7 +602,7 @@ fn main(){
             view = new_view;
         } else {
             for (_, mut emulator) in emulators.iter_mut() {
-                emulator.update(&renderer, &font);
+                emulator.update();
             }
 
             std::thread::sleep(Duration::from_millis(1000/60));

@@ -4,7 +4,9 @@ extern crate url;
 use self::hyper::Client;
 use self::hyper::header::{Connection, ContentLength, Referer};
 
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -203,55 +205,86 @@ impl List {
 }
 
 pub struct Download {
-    progress: Arc<Mutex<Progress>>
+    progress: Arc<Mutex<Progress>>,
+    result: JoinHandle<()>
 }
 
 impl Download {
-    pub fn new(system: &str, file: &str) -> Download {
+    pub fn new(url: &str, path: &Path) -> Download {
         let progress = Arc::new(Mutex::new(Progress::Connecting));
         let progress_child = progress.clone();
-        let url_child = format!("http://doperoms.com/files/roms/{}/GETFILE_{}", system, url::percent_encoding::utf8_percent_encode(file, url::percent_encoding::DEFAULT_ENCODE_SET));
+        let url_child = url.to_string();
+        let path_child = path.to_path_buf();
 
-        thread::spawn(move || {
-            match Client::new()
-                    .get(&url_child)
-                    .header(Connection::keep_alive())
-                    .header(Referer("http://doperoms.com/".to_string()))
-                    .send()
-            {
-                Ok(mut res) => {
-                    if let Some(&ContentLength(total)) = res.headers.get() {
-                        let mut downloaded = 0;
+        let result = thread::spawn(move || {
+            if let Some(parent) = path_child.parent() {
+                match fs::create_dir_all(parent) {
+                    Ok(_) => (),
+                    Err(err) => {
                         if let Ok(mut progress) = progress_child.lock() {
-                            *progress = Progress::InProgress(downloaded, total);
+                            *progress = Progress::Error(format!("{:?}", err));
                         }
+                        return;
+                    }
+                }
+            }
 
-                        let mut bytes = [0; 65536];
-                        'reading: loop {
-                            match res.read(&mut bytes) {
-                                Ok(0) => {
-                                    if let Ok(mut progress) = progress_child.lock() {
-                                        *progress = Progress::Complete;
-                                    }
-                                    break 'reading;
+            match File::create(&path_child) {
+                Ok(mut file) => {
+                    match Client::new()
+                            .get(&url_child)
+                            .header(Connection::keep_alive())
+                            .header(Referer("http://doperoms.com/".to_string()))
+                            .send()
+                    {
+                        Ok(mut res) => {
+                            if let Some(&ContentLength(total)) = res.headers.get() {
+                                let mut downloaded = 0;
+                                if let Ok(mut progress) = progress_child.lock() {
+                                    *progress = Progress::InProgress(downloaded, total);
                                 }
-                                Ok(count) => {
-                                    downloaded += count as u64;
-                                    if let Ok(mut progress) = progress_child.lock() {
-                                        *progress = Progress::InProgress(downloaded, total);
+
+                                let mut bytes = [0; 65536];
+                                'downloading: loop {
+                                    match res.read(&mut bytes) {
+                                        Ok(0) => {
+                                            if let Ok(mut progress) = progress_child.lock() {
+                                                *progress = Progress::Complete;
+                                            }
+                                            break 'downloading;
+                                        }
+                                        Ok(count) => {
+                                            match file.write(&bytes[ .. count]) {
+                                                Ok(_) => {
+                                                    downloaded += count as u64;
+                                                    if let Ok(mut progress) = progress_child.lock() {
+                                                        *progress = Progress::InProgress(downloaded, total);
+                                                    }
+                                                },
+                                                Err(err) => {
+                                                    if let Ok(mut progress) = progress_child.lock() {
+                                                        *progress = Progress::Error(format!("{:?}", err));
+                                                    }
+                                                    break 'downloading;
+                                                }
+                                            }
+                                        }
+                                        Err(err) => {
+                                            if let Ok(mut progress) = progress_child.lock() {
+                                                *progress = Progress::Error(format!("{:?}", err));
+                                            }
+                                            break 'downloading;
+                                        }
                                     }
                                 }
-                                Err(err) => {
-                                    if let Ok(mut progress) = progress_child.lock() {
-                                        *progress = Progress::Error(format!("{:?}", err));
-                                    }
-                                    break 'reading;
+                            } else {
+                                if let Ok(mut progress) = progress_child.lock() {
+                                    *progress = Progress::Error("No ContentLength".to_string());
                                 }
                             }
-                        }
-                    } else {
-                        if let Ok(mut progress) = progress_child.lock() {
-                            *progress = Progress::Error("No ContentLength".to_string());
+                        },
+                        Err(err) => if let Ok(mut progress) = progress_child.lock() {
+                            *progress = Progress::Error(format!("{:?}", err));
                         }
                     }
                 },
@@ -262,14 +295,29 @@ impl Download {
         });
 
         Download {
-            progress: progress
+            progress: progress,
+            result: result
         }
+    }
+
+    pub fn rom(system: &str, rom: &str, path: &Path) -> Download {
+        Download::new(
+            &format!("http://doperoms.com/files/roms/{}/GETFILE_{}", system, url::percent_encoding::utf8_percent_encode(rom, url::percent_encoding::DEFAULT_ENCODE_SET)),
+            path
+        )
     }
 
     pub fn progress(&self) -> Progress {
         match self.progress.lock() {
             Ok(progress) => progress.clone(),
             Err(err) => Progress::Error(format!("{:?}", err))
+        }
+    }
+
+    pub fn result(self) -> bool {
+        match self.result.join() {
+            Ok(_) => true,
+            Err(_) => false
         }
     }
 }
