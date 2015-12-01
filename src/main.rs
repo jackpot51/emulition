@@ -150,11 +150,25 @@ pub enum Progress {
     Complete,
 }
 
+#[derive(Clone, Debug)]
+pub enum RomFlags {
+    Alternate,
+    Bad,
+    Cracked,
+    Fix,
+    Good,
+    Hack,
+    OverDump,
+    PublicDomain,
+    Trainer,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct RomConfig {
     pub name: String,
     pub file: String,
     pub image: String,
+    pub flags: Vec<RomFlags>,
 }
 
 struct Rom {
@@ -196,7 +210,7 @@ impl Rom {
                 Progress::Complete => format!("{}: Complete", self.config.name)
             }
         } else {
-            self.config.name.clone()
+            format!("{}", self.config.name)
         };
 
         let texture = CenteredTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
@@ -237,7 +251,8 @@ impl Emulator {
                         roms.push(Rom::new(renderer, font, RomConfig {
                             name: path.replace(&config.roms, "").trim_matches('/').to_string(),
                             file: path.to_string() + "/rom.bin",
-                            image: path.to_string() + "/image.jpg"
+                            image: path.to_string() + "/image.jpg",
+                            flags: Vec::new(),
                         }))
                     }
                 }
@@ -508,17 +523,23 @@ fn main(){
                     if downloads {
                         let mut download_option = None;
                         for rom in emulator.downloads.iter() {
-                            if y + 32 >= 0 && y < height {
-                                if cursor.inside(x, y, width - x, 32) {
-                                    renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 32).unwrap().unwrap());
+                            if y + 96 >= 0 && y < height {
+                                if cursor.inside(x, y, width - x, 96) {
+                                    renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 96).unwrap().unwrap());
                                     if forward {
                                         download_option = Some(rom.clone());
                                     }
                                 }
-                                let texture = NormalTexture::new(font.render(&renderer, &rom.name, Color::RGB(0, 0, 0)));
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.name) , Color::RGB(0, 0, 0)));
                                 texture.draw(&mut renderer, x + 8, y + 4);
+
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("{:?}", rom.flags) , Color::RGB(0, 0, 0)));
+                                texture.draw(&mut renderer, x + 8 + 64, y + 4 + 32);
+
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.file) , Color::RGB(0, 0, 0)));
+                                texture.draw(&mut renderer, x + 8 + 64, y + 4 + 64);
                             }
-                            y += 32;
+                            y += 96;
                         }
 
                         if let Some(mut config) = download_option.take() {
@@ -528,9 +549,7 @@ fn main(){
                                 image_path.push(&config.name);
                                 image_path.push("image.jpg");
                                 doperoms::Download::new(&config.image, &image_path).result();
-                                if let Some(image) = image_path.to_str() {
-                                    config.image = image.to_string();
-                                }
+                                config.image = format!("roms/{}/{}/image.jpg", key, config.name);
                             }
 
                             let mut rom = Rom::new(&renderer, &font, config);

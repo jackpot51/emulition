@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use super::{Progress, RomConfig};
+use super::{Progress, RomConfig, RomFlags};
 
 trait FindFrom {
     fn find_from(&self, pat: &str, start: usize) -> Option<usize>;
@@ -64,6 +64,7 @@ struct Page {
 fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
     let mut page = Page::default();
 
+    let mut entry = RomConfig::default();
     for line in html.lines() {
         if line.find("<meta name=\"description\" content=\"Now listing roms for ").is_some() {
             if let Some(p) = line.find_skip("Showing ") {
@@ -91,9 +92,34 @@ fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
             }
         }
 
-        if line.find("<td height=\"40\" align=\"left\" valign=\"middle\"><a id=\"listing\" ").is_some() {
-            let mut entry = RomConfig::default();
+        if line.find("<td height=\"40\" align=\"left\" valign=\"middle\" nowrap=\"nowrap\">").is_some() {
+            if let Some(p) = line.find_skip("<img src=\"http://www.doperoms.com/") {
+                if let Some(n) = line.find_from(".gif\" ", p) {
+                    let flag = line[p .. n].to_string();
+                    if flag == "good" {
+                        entry.flags.push(RomFlags::Good);
+                    } else if flag == "cracked" {
+                        entry.flags.push(RomFlags::Cracked);
+                    } else if flag == "alternate" {
+                        entry.flags.push(RomFlags::Alternate);
+                    } else if flag == "trainer" {
+                        entry.flags.push(RomFlags::Trainer);
+                    } else if flag == "fix" {
+                        entry.flags.push(RomFlags::Fix);
+                    } else if flag == "hack" {
+                        entry.flags.push(RomFlags::Hack);
+                    } else if flag == "publicdomain" {
+                        entry.flags.push(RomFlags::PublicDomain);
+                    } else if flag == "bad" {
+                        entry.flags.push(RomFlags::Bad);
+                    } else if flag == "overdump" {
+                        entry.flags.push(RomFlags::OverDump);
+                    }
+                }
+            }
+        }
 
+        if line.find("<td height=\"40\" align=\"left\" valign=\"middle\"><a id=\"listing\" ").is_some() {
             if let Some(p) = line.find_skip("name=\"") {
                 if let Some(n) = line.find_from("\" ", p) {
                     entry.file = line[p .. n].to_string();
@@ -114,6 +140,7 @@ fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
 
             if entry.file != "No Roms" {
                 roms.push(entry);
+                entry = RomConfig::default();
             }
         }
     }
