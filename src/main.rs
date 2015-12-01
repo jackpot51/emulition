@@ -137,6 +137,15 @@ impl Font {
     }
 }
 
+#[derive(Clone)]
+pub enum Progress {
+    Connecting,
+    InProgress(u64, u64),
+    Error(String),
+    Complete,
+}
+
+#[derive(Debug, Default)]
 pub struct RomConfig {
     pub name: String,
     pub file: String,
@@ -162,7 +171,7 @@ impl Rom {
         }
     }
 
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
+    pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
         if let Some(ref image) = self.image {
             image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
         }
@@ -177,12 +186,14 @@ struct EmulatorConfig {
     pub roms: String,
     pub program: String,
     pub args: Vec<String>,
+    pub doperoms: String,
 }
 
 struct Emulator {
     name: CenteredTexture,
     image: ScaledTexture,
     roms: Vec<Rom>,
+    doperoms: Option<doperoms::List>,
     config: EmulatorConfig
 }
 
@@ -209,13 +220,26 @@ impl Emulator {
             name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
             image: ScaledTexture::new(renderer.load_texture(&Path::new(&config.image)).unwrap()),
             roms: roms,
+            doperoms: Some(doperoms::List::new(&config.doperoms)),
             config: config
         }
     }
 
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
+    pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
         self.image.draw(renderer, x + 8, y + 8, w - 16, h - 64);
-        self.name.draw(renderer, x, y + h as i32 - 64, w, 64);
+        self.name.draw(renderer, x, y + h - 64, w, 32);
+
+        if let Some(ref doperoms) = self.doperoms {
+            let text = match doperoms.progress() {
+                Progress::Connecting => "Connecting".to_string(),
+                Progress::InProgress(downloaded, total) => format!("{:.1}%", downloaded as f64 * 100.0 / total as f64),
+                Progress::Error(error) => error,
+                Progress::Complete => "Complete".to_string()
+            };
+
+            let texture = CenteredTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
+            texture.draw(renderer, x, y + h - 32, w, 32);
+        }
     }
 
     pub fn run(&self, rom: &Rom){
@@ -264,9 +288,6 @@ fn main(){
     let mut cursor = Cursor::new(&renderer, "res/cursor.png");
 
     let font = Font::new("res/DroidSans.ttf", 24);
-
-    let back = font.render(&renderer, "< Back", Color::RGB(0, 0, 0));
-    let download = font.render(&renderer, "Download ROMs", Color::RGB(0, 0, 0));
 
     let mut emulators = BTreeMap::new();
 
@@ -351,7 +372,7 @@ fn main(){
         match view {
             View::Rom(ref key, index) => {
                 if let Some(emulator) = emulators.get(key) {
-                    emulator.draw(&mut renderer, x, y, s, s);
+                    emulator.draw(&mut renderer, &font, x, y, s, s);
 
                     x = s;
                     y = 0;
@@ -365,7 +386,7 @@ fn main(){
                             }
                         }
 
-                        rom.draw(&mut renderer, x, y, s, s);
+                        rom.draw(&mut renderer, &font, x, y, s, s);
 
                         x = s;
                         y = 0;
@@ -382,7 +403,7 @@ fn main(){
             },
             View::Emulator(ref key) => {
                 if let Some(emulator) = emulators.get(key) {
-                    emulator.draw(&mut renderer, x, y, s, s);
+                    emulator.draw(&mut renderer, &font, x, y, s, s);
                     y += s;
 
                     x = s;
@@ -397,7 +418,7 @@ fn main(){
                                 }
                             }
 
-                            rom.draw(&mut renderer, x, y, s, s);
+                            rom.draw(&mut renderer, &font, x, y, s, s);
 
                             x += s;
                             if x + s > renderer.output_size().unwrap().0 as i32 {
@@ -424,7 +445,7 @@ fn main(){
                         }
                     }
 
-                    emulator.draw(&mut renderer, x, y, s, s);
+                    emulator.draw(&mut renderer, &font, x, y, s, s);
 
                     x += s;
                     if x + s > renderer.output_size().unwrap().0 as i32 {

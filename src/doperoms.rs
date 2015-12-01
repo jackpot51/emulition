@@ -1,6 +1,14 @@
-use std::process::Command;
+extern crate hyper;
+extern crate url;
 
-use super::RomConfig;
+use self::hyper::Client;
+use self::hyper::header::{Connection, ContentLength, Referer};
+
+use std::io::Read;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+
+use super::{Progress, RomConfig};
 
 trait FindFrom {
     fn find_from(&self, pat: &str, start: usize) -> Option<usize>;
@@ -45,21 +53,13 @@ impl FindFromSkip for str {
 }
 
 #[derive(Debug, Default)]
-struct Entry {
-    file: String,
-    image: String,
-    name: String,
-}
-
-#[derive(Debug, Default)]
 struct Page {
     count: usize,
     index: usize,
     total: usize,
-    entries: Vec<Entry>,
 }
 
-fn parse(html: &str) -> Page {
+fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
     let mut page = Page::default();
 
     for line in html.lines() {
@@ -90,7 +90,7 @@ fn parse(html: &str) -> Page {
         }
 
         if line.find("<td height=\"40\" align=\"left\" valign=\"middle\"><a id=\"listing\" ").is_some() {
-            let mut entry = Entry::default();
+            let mut entry = RomConfig::default();
 
             if let Some(p) = line.find_skip("name=\"") {
                 if let Some(n) = line.find_from("\" ", p) {
@@ -110,41 +110,164 @@ fn parse(html: &str) -> Page {
                 }
             }
 
-            page.entries.push(entry);
+            roms.push(entry);
         }
     }
 
     page
 }
 
-pub fn list(system: &str) -> Vec<RomConfig> {
-    let mut roms = Vec::new();
+pub struct List {
+    progress: Arc<Mutex<Progress>>,
+    result: JoinHandle<Vec<RomConfig>>,
+}
 
-    let mut next_index = 0;
-    loop {
-        let output = Command::new("wget")
-                        .arg("-O")
-                        .arg("-")
-                        .arg(&format!("http://www.doperoms.com/roms/{}/{}.html", system, next_index))
-                        .output().unwrap();
+impl List {
+    pub fn new(system: &str) -> List {
+        let progress = Arc::new(Mutex::new(Progress::Connecting));
+        let progress_child = progress.clone();
+        let system_child = system.to_string();
 
-        let page = parse(&String::from_utf8_lossy(&output.stdout));
+        let result = thread::spawn(move || -> Vec<RomConfig> {
+            let mut roms = Vec::new();
 
-        for entry in page.entries.iter() {
-            println!("{:?}", entry);
+            let client = Client::new();
+            let mut next_index = 0;
+            'downloading: loop {
+                match client
+                    .get(&format!("http://doperoms.com/roms/{}/{}.html", system_child, next_index))
+                    .header(Connection::keep_alive())
+                    .header(Referer("http://www.doperoms.com/".to_string()))
+                    .send()
+                {
+                    Ok(mut res) => {
+                        let mut html = String::new();
+                        match res.read_to_string(&mut html) {
+                            Ok(_) => {
+                                let page = parse(&html, &mut roms);
 
-            roms.push(RomConfig {
-                name: entry.name.clone(),
-                file: entry.file.clone(),
-                image: entry.image.clone(),
-            });
-        }
+                                if let Ok(mut progress) = progress_child.lock() {
+                                    *progress = Progress::InProgress(page.index as u64, page.total as u64);
+                                }
 
-        next_index = page.index + page.count;
-        if next_index >= page.total {
-            break;
+                                next_index = page.index + page.count;
+                                if next_index >= page.total {
+                                    if let Ok(mut progress) = progress_child.lock() {
+                                        *progress = Progress::Complete;
+                                    }
+                                    break 'downloading;
+                                }
+                            },
+                            Err(err) => {
+                                if let Ok(mut progress) = progress_child.lock() {
+                                    *progress = Progress::Error(format!("{:?}", err));
+                                }
+                                break 'downloading;
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        if let Ok(mut progress) = progress_child.lock() {
+                            *progress = Progress::Error(format!("{:?}", err));
+                        }
+                        break 'downloading;
+                    }
+                }
+            }
+
+            roms
+        });
+
+        List {
+            progress: progress,
+            result: result,
         }
     }
 
-    return roms;
+    pub fn progress(&self) -> Progress {
+        match self.progress.lock() {
+            Ok(progress) => progress.clone(),
+            Err(err) => Progress::Error(format!("{:?}", err))
+        }
+    }
+
+    pub fn result(self) -> Vec<RomConfig> {
+        if let Some(roms) = self.result.join().ok() {
+            roms
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+pub struct Download {
+    progress: Arc<Mutex<Progress>>
+}
+
+impl Download {
+    pub fn new(system: &str, file: &str) -> Download {
+        let progress = Arc::new(Mutex::new(Progress::Connecting));
+        let progress_child = progress.clone();
+        let url_child = format!("http://doperoms.com/files/roms/{}/GETFILE_{}", system, url::percent_encoding::utf8_percent_encode(file, url::percent_encoding::DEFAULT_ENCODE_SET));
+
+        thread::spawn(move || {
+            match Client::new()
+                    .get(&url_child)
+                    .header(Connection::keep_alive())
+                    .header(Referer("http://doperoms.com/".to_string()))
+                    .send()
+            {
+                Ok(mut res) => {
+                    if let Some(&ContentLength(total)) = res.headers.get() {
+                        let mut downloaded = 0;
+                        if let Ok(mut progress) = progress_child.lock() {
+                            *progress = Progress::InProgress(downloaded, total);
+                        }
+
+                        let mut bytes = [0; 65536];
+                        'reading: loop {
+                            match res.read(&mut bytes) {
+                                Ok(0) => {
+                                    if let Ok(mut progress) = progress_child.lock() {
+                                        *progress = Progress::Complete;
+                                    }
+                                    break 'reading;
+                                }
+                                Ok(count) => {
+                                    downloaded += count as u64;
+                                    if let Ok(mut progress) = progress_child.lock() {
+                                        *progress = Progress::InProgress(downloaded, total);
+                                    }
+                                }
+                                Err(err) => {
+                                    if let Ok(mut progress) = progress_child.lock() {
+                                        *progress = Progress::Error(format!("{:?}", err));
+                                    }
+                                    break 'reading;
+                                }
+                            }
+                        }
+                    } else {
+                        if let Ok(mut progress) = progress_child.lock() {
+                            *progress = Progress::Error("No ContentLength".to_string());
+                        }
+                    }
+                },
+                Err(err) => if let Ok(mut progress) = progress_child.lock() {
+                    *progress = Progress::Error(format!("{:?}", err));
+                }
+            }
+        });
+
+        Download {
+            progress: progress
+        }
+    }
+
+    pub fn progress(&self) -> Progress {
+        match self.progress.lock() {
+            Ok(progress) => progress.clone(),
+            Err(err) => Progress::Error(format!("{:?}", err))
+        }
+    }
 }
