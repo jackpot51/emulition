@@ -207,6 +207,19 @@ fn main(){
             if (dx.powi(2) + dy.powi(2)).sqrt() > 0.2 {
                 cursor.offset(&renderer, dx * 8.0, dy * 8.0);
             }
+
+            if controller.button(Button::DPadLeft) {
+                cursor.offset(&renderer, -8.0, 0.0);
+            }
+            if controller.button(Button::DPadRight) {
+                cursor.offset(&renderer, 8.0, 0.0);
+            }
+            if controller.button(Button::DPadUp) {
+                cursor.offset(&renderer, 0.0, -8.0);
+            }
+            if controller.button(Button::DPadDown) {
+                cursor.offset(&renderer, 0.0, 8.0);
+            }
         }
 
         renderer.set_draw_color(Color::RGB(255, 255, 255));
