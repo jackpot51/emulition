@@ -8,11 +8,13 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
-use sdl2::controller::Axis;
+use sdl2::controller::{Axis, Button};
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
+use sdl2::mouse::Mouse;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{Renderer, Texture};
@@ -20,8 +22,8 @@ use sdl2::render::{Renderer, Texture};
 use sdl2_image::LoadTexture;
 
 struct Cursor {
-    x: f32,
-    y: f32,
+    pub x: f32,
+    pub y: f32,
     texture: Texture,
 }
 
@@ -70,22 +72,23 @@ impl Font {
 #[derive(RustcDecodable)]
 struct EmulatorConfig {
     pub name: String,
-    pub command: String,
+    pub program: String,
+    pub args: Vec<String>,
     pub image: String,
 }
 
 struct Emulator {
     name: Texture,
-    command: String,
     image: Texture,
+    config: EmulatorConfig
 }
 
 impl Emulator {
     pub fn new(renderer: &Renderer, font: &Font, config: EmulatorConfig) -> Emulator {
         Emulator {
             name: font.render(&renderer, &config.name, Color::RGBA(0, 0, 0, 255)),
-            command: config.command,
             image: renderer.load_texture(&Path::new(&config.image)).unwrap(),
+            config: config
         }
     }
 
@@ -108,6 +111,19 @@ impl Emulator {
             let y2 = y + h as i32;
             renderer.copy(&self.name, None, Rect::new(x2, y2, w2, h2).unwrap());
         }
+    }
+
+    pub fn run(&mut self, rom: &str){
+        let mut command = Command::new(&self.config.program);
+        for arg in self.config.args.iter() {
+            if arg == "%r" {
+                command.arg(rom);
+            }else{
+                command.arg(arg);
+            }
+        }
+
+        println!("status: {}", command.status().unwrap());
     }
 }
 
@@ -153,10 +169,20 @@ fn main(){
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
+    let mut active_key: Option<String> = None;
     'running: loop {
+        let mut forward = false;
+        let mut backward = false;
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} | Event::KeyDown { scancode: Some(Scancode::Escape), .. } => break 'running,
+                Event::KeyDown { scancode: Some(Scancode::Return), .. } => forward = true,
+                Event::KeyDown { scancode: Some(Scancode::Backspace), .. } => backward = true,
+                Event::ControllerButtonDown { button: Button::A, .. } => forward = true,
+                Event::ControllerButtonDown { button: Button::B, .. } => backward = true,
+                Event::MouseButtonDown { mouse_btn: Mouse::Left, .. } => forward = true,
+                Event::MouseButtonDown { mouse_btn: Mouse::Right, .. } => backward = true,
                 Event::MouseMotion { x, y, .. } => cursor.set(&renderer, x as f32, y as f32),
                 _ => {}
             }
@@ -189,15 +215,38 @@ fn main(){
         let mut x = 0;
         let mut y = 0;
         let s = renderer.output_size().unwrap().0 / 4;
-        for (_, emulator) in emulators.iter() {
-            emulator.draw(&mut renderer, x, y, s, s - 64);
 
-            x += s as i32;
-            if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
-                x = 0;
-                y += s as i32;
+        active_key = if let Some(ref key) = active_key {
+            if let Some(emulator) = emulators.get_mut(key) {
+                emulator.draw(&mut renderer, x, y, s, s - 64);
+
+                if backward {
+                    None
+                } else {
+                    Some(key.clone())
+                }
+            } else {
+                None
             }
-        }
+        } else {
+            let mut ret = None;
+
+            for (key, emulator) in emulators.iter() {
+                emulator.draw(&mut renderer, x, y, s, s - 64);
+
+                if forward && cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
+                    ret = Some(key.clone());
+                }
+
+                x += s as i32;
+                if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                    x = 0;
+                    y += s as i32;
+                }
+            }
+
+            ret
+        };
 
         cursor.draw(&mut renderer);
 
