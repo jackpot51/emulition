@@ -188,6 +188,13 @@ impl Emulator {
     }
 }
 
+#[derive(Clone, PartialEq)]
+enum View {
+    //Rom(String, usize),
+    Emulator(String),
+    Overview
+}
+
 fn main(){
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -230,7 +237,7 @@ fn main(){
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let mut active_key: Option<String> = None;
+    let mut view = View::Overview;
     'running: loop {
         let mut forward = false;
         let mut backward = false;
@@ -290,22 +297,56 @@ fn main(){
         let mut y = 0;
         let s = renderer.output_size().unwrap().0 / 4;
 
-        active_key = if let Some(ref key) = active_key {
-            if let Some(emulator) = emulators.get_mut(key) {
-                emulator.draw(&mut renderer, x, y, s, s - 64);
+        let mut new_view = view.clone();
+        match view {
+            View::Emulator(ref key) => {
+                if let Some(emulator) = emulators.get_mut(key) {
+                    emulator.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
 
-                x += s as i32;
-                if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
-                    x = 0;
-                    y += s as i32;
-                }
-
-                for rom in emulator.roms.iter() {
-                    rom.draw(&mut renderer, x, y, s, s - 64);
-
-                    if forward && cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
-                        emulator.run(rom);
+                    x += s as i32;
+                    if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                        x = 0;
+                        y += s as i32;
                     }
+
+                    for rom in emulator.roms.iter() {
+                        if cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
+                            renderer.set_draw_color(Color::RGBA(192, 192, 192, 255));
+                            renderer.fill_rect(Rect::new(x, y, s, s).unwrap().unwrap());
+
+                            if forward {
+                                emulator.run(rom);
+                            }
+                        }
+
+                        rom.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
+
+                        x += s as i32;
+                        if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                            x = 0;
+                            y += s as i32;
+                        }
+                    }
+
+                    if backward {
+                        new_view = View::Overview
+                    }
+                } else {
+                    new_view = View::Overview
+                }
+            },
+            View::Overview => {
+                for (key, emulator) in emulators.iter() {
+                    if cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
+                        renderer.set_draw_color(Color::RGBA(192, 192, 192, 255));
+                        renderer.fill_rect(Rect::new(x, y, s, s).unwrap().unwrap());
+
+                        if forward {
+                            new_view = View::Emulator(key.clone());
+                        }
+                    }
+
+                    emulator.draw(&mut renderer, x + 8, y + 8, s - 16, s - 64);
 
                     x += s as i32;
                     if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
@@ -313,39 +354,17 @@ fn main(){
                         y += s as i32;
                     }
                 }
-
-                if backward {
-                    None
-                } else {
-                    Some(key.clone())
-                }
-            } else {
-                None
             }
-        } else {
-            let mut ret = None;
-
-            for (key, emulator) in emulators.iter() {
-                emulator.draw(&mut renderer, x, y, s, s - 64);
-
-                if forward && cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
-                    ret = Some(key.clone());
-                }
-
-                x += s as i32;
-                if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
-                    x = 0;
-                    y += s as i32;
-                }
-            }
-
-            ret
         };
 
         cursor.draw(&mut renderer);
 
         renderer.present();
 
-        std::thread::sleep(Duration::from_millis(1000/60));
+        if new_view != view {
+            view = new_view;
+        } else {
+            std::thread::sleep(Duration::from_millis(1000/60));
+        }
     }
 }
