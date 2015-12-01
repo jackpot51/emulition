@@ -5,7 +5,7 @@ extern crate sdl2_ttf;
 extern crate toml;
 
 use std::collections::BTreeMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
@@ -69,25 +69,86 @@ impl Font {
     }
 }
 
+struct RomConfig {
+    pub name: String,
+    pub file: String,
+    pub image: String,
+}
+
+struct Rom {
+    name: Texture,
+    image: Option<Texture>,
+    config: RomConfig,
+}
+
+impl Rom {
+    pub fn new(renderer: &Renderer, font: &Font, config: RomConfig) -> Rom {
+        Rom {
+            name: font.render(&renderer, &config.name, Color::RGBA(0, 0, 0, 255)),
+            image: renderer.load_texture(&Path::new(&config.image)).ok(),
+            config: config
+        }
+    }
+
+    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: u32, h: u32) {
+        if let Some(ref image) = self.image {
+            let query = image.query();
+            let aspect = query.width as f32 / query.height as f32;
+    		let w2 = (aspect * h as f32).min(w as f32) as u32;
+    		let h2 = (w as f32 / aspect).min(h as f32) as u32;
+            let x2 = x + (w - w2) as i32/2;
+            let y2 = y + (h - h2) as i32/2;
+            renderer.copy(&image, None, Rect::new(x2, y2, w2, h2).unwrap());
+        }
+
+        {
+            let query = self.name.query();
+            let w2 = query.width;
+            let h2 = query.height;
+            let x2 = x + (w - w2) as i32/2;
+            let y2 = y + h as i32;
+            renderer.copy(&self.name, None, Rect::new(x2, y2, w2, h2).unwrap());
+        }
+    }
+}
+
 #[derive(RustcDecodable)]
 struct EmulatorConfig {
     pub name: String,
+    pub image: String,
+    pub roms: String,
     pub program: String,
     pub args: Vec<String>,
-    pub image: String,
 }
 
 struct Emulator {
     name: Texture,
     image: Texture,
+    roms: Vec<Rom>,
     config: EmulatorConfig
 }
 
 impl Emulator {
     pub fn new(renderer: &Renderer, font: &Font, config: EmulatorConfig) -> Emulator {
+        let mut roms = Vec::new();
+        if let Ok(read_dir) = fs::read_dir(&config.roms) {
+            for entry_result in read_dir {
+                if let Ok(entry) = entry_result {
+                    if let Some(path) = entry.path().to_str() {
+                        roms.push(Rom::new(renderer, font, RomConfig {
+                            name: path.replace(&config.roms, "").trim_matches('/').to_string(),
+                            file: path.to_string() + "/rom.bin",
+                            image: path.to_string() + "/image.jpg"
+                        }))
+                    }
+                }
+            }
+        }
+
         Emulator {
             name: font.render(&renderer, &config.name, Color::RGBA(0, 0, 0, 255)),
             image: renderer.load_texture(&Path::new(&config.image)).unwrap(),
+            roms: roms,
             config: config
         }
     }
@@ -113,11 +174,11 @@ impl Emulator {
         }
     }
 
-    pub fn run(&mut self, rom: &str){
+    pub fn run(&self, rom: &Rom){
         let mut command = Command::new(&self.config.program);
         for arg in self.config.args.iter() {
             if arg == "%r" {
-                command.arg(rom);
+                command.arg(&rom.config.file);
             }else{
                 command.arg(arg);
             }
@@ -232,6 +293,26 @@ fn main(){
         active_key = if let Some(ref key) = active_key {
             if let Some(emulator) = emulators.get_mut(key) {
                 emulator.draw(&mut renderer, x, y, s, s - 64);
+
+                x += s as i32;
+                if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                    x = 0;
+                    y += s as i32;
+                }
+
+                for rom in emulator.roms.iter() {
+                    rom.draw(&mut renderer, x, y, s, s - 64);
+
+                    if forward && cursor.x >= x as f32 && cursor.x < (x + s as i32) as f32 && cursor.y >= y as f32 && cursor.y < (y + s as i32) as f32 {
+                        emulator.run(rom);
+                    }
+
+                    x += s as i32;
+                    if x + s as i32 > renderer.output_size().unwrap().0 as i32 {
+                        x = 0;
+                        y += s as i32;
+                    }
+                }
 
                 if backward {
                     None

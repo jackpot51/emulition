@@ -1,47 +1,55 @@
 [ds]
 name = "DS"
+image = "res/ds.png"
+roms = "roms/ds"
 program = "desmume"
 args = ["%r"]
-image = "res/ds.png"
 
 [gamecube]
 name = "Gamecube"
+image = "res/gamecube.png"
+roms = "roms/gamecube"
 program = "dolphin-emu"
 args = ["-b", "-e", "%r"]
-image = "res/gamecube.png"
 
 [gba]
 name = "Gameboy Advance"
+image = "res/gba.png"
+roms = "roms/gba"
 program = "vba"
 args = ["-F", "%r"]
-image = "res/gba.png"
 
 [gbc]
 name = "Gameboy Color"
+image = "res/gbc.png"
+roms = "roms/gbc"
 program = "vba"
 args = ["-F", "%r"]
-image = "res/gbc.png"
 
 [n64]
 name = "Nintendo 64"
+image = "res/n64.png"
+roms = "roms/n64"
 program = "mupen64plus"
 args = ["--fullscreen", "%r"]
-image = "res/n64.png"
 
 [nes]
 name = "NES"
+image = "res/nes.png"
+roms = "roms/nes"
 program = "nestopia"
 args = ["-f", "%r"]
-image = "res/nes.png"
 
 [snes]
 name = "SNES"
+image = "res/snes.png"
+roms = "roms/snes"
 program = "zsnes"
 args = ["%r"]
-image = "res/snes.png"
 
 [wii]
 name = "Wii"
+image = "res/wii.png"
+roms = "roms/wii"
 program = "dolphin-emu"
 args = ["-b", "-e", "%r"]
-image = "res/wii.png"
