@@ -364,7 +364,7 @@ fn main(){
     'running: loop {
         let mut forward = false;
         let mut backward = false;
-        let mut scroll = 0;
+        let mut scroll = 0.0;
 
         for event in event_pump.poll_iter() {
             match event {
@@ -376,7 +376,7 @@ fn main(){
                 Event::MouseButtonDown { mouse_btn: Mouse::Left, .. } => forward = true,
                 Event::MouseButtonDown { mouse_btn: Mouse::Right, .. } => backward = true,
                 Event::MouseMotion { x, y, .. } => cursor.set(&renderer, x as f32, y as f32),
-                Event::MouseWheel { y, .. } => scroll += y,
+                Event::MouseWheel { y, .. } => scroll += y as f32 * 64.0,
                 _ => {}
             }
         }
@@ -394,17 +394,22 @@ fn main(){
             cursor.offset(&renderer, 0.0, 8.0);
         }
         if event_pump.keyboard_state().is_scancode_pressed(Scancode::PageUp) {
-            scroll -= 1;
+            scroll += 32.0;
         }
         if event_pump.keyboard_state().is_scancode_pressed(Scancode::PageDown) {
-            scroll += 1;
+            scroll -= 32.0;
         }
 
         for controller in controllers.iter() {
             let dx = controller.axis(Axis::LeftX) as f32 / 32768.0;
             let dy = controller.axis(Axis::LeftY) as f32 / 32768.0;
             if (dx.powi(2) + dy.powi(2)).sqrt() > 0.2 {
-                cursor.offset(&renderer, dx * 8.0, dy * 8.0);
+                cursor.offset(&renderer, dx * 16.0, dy * 16.0);
+            }
+
+            let dz = controller.axis(Axis::RightY) as f32 / 32768.0;
+            if dz.abs() > 0.2 {
+                scroll -= dz * 32.0;
             }
 
             if controller.button(Button::DPadLeft) {
@@ -421,7 +426,7 @@ fn main(){
             }
         }
 
-        offset += scroll * 32;
+        offset += scroll as i32;
 
         renderer.set_draw_color(Color::RGB(255, 255, 255));
         renderer.clear();
@@ -530,13 +535,14 @@ fn main(){
                                         download_option = Some(rom.clone());
                                     }
                                 }
+
                                 let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.name) , Color::RGB(0, 0, 0)));
                                 texture.draw(&mut renderer, x + 8, y + 4);
 
-                                let texture = NormalTexture::new(font.render(&renderer, &format!("{:?}", rom.flags) , Color::RGB(0, 0, 0)));
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.file) , Color::RGB(0, 0, 0)));
                                 texture.draw(&mut renderer, x + 8 + 64, y + 4 + 32);
 
-                                let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.file) , Color::RGB(0, 0, 0)));
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("Flags: {:?}", rom.flags) , Color::RGB(0, 0, 0)));
                                 texture.draw(&mut renderer, x + 8 + 64, y + 4 + 64);
                             }
                             y += 96;
