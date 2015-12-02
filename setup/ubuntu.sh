@@ -1,6 +1,8 @@
 #!/bin/bash
-#Support
-sudo apt-get install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libssl-dev p7zip
+#Build
+sudo apt-get install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libssl-dev
+#Runtime
+sudo apt-get install p7zip
 #Emulators
 sudo apt-get install desmume
 sudo apt-get install dolphin-emu
