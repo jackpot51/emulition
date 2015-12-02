@@ -24,6 +24,24 @@ use sdl2_image::LoadTexture;
 
 pub mod doperoms;
 
+pub fn ls(path: &str) -> Vec<String> {
+    let mut entries = Vec::new();
+
+    if let Ok(read_dir) = fs::read_dir(path) {
+        for entry_result in read_dir {
+            if let Ok(entry) = entry_result {
+                if let Some(path) = entry.path().to_str() {
+                    entries.push(path.to_string());
+                }
+            }
+        }
+    }
+
+    entries.sort();
+
+    entries
+}
+
 struct NormalTexture {
     texture: Texture
 }
@@ -173,18 +191,20 @@ pub struct RomConfig {
 
 struct Rom {
     image: Option<ScaledTexture>,
+    image_dl: Option<doperoms::Download>,
     doperoms: Option<doperoms::Download>,
     config: RomConfig,
 }
 
 impl Rom {
-    pub fn new(renderer: &Renderer, font: &Font, config: RomConfig) -> Rom {
+    pub fn new(renderer: &Renderer, config: RomConfig) -> Rom {
         Rom {
             image: if let Some(texture) = renderer.load_texture(&Path::new(&config.image)).ok() {
                 Some(ScaledTexture::new(texture))
             } else {
                 None
             },
+            image_dl: None,
             doperoms: None,
             config: config
         }
@@ -221,6 +241,61 @@ impl Rom {
             image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
         }
     }
+
+    pub fn update(&mut self, renderer: &Renderer){
+        let take_image_dl = if let Some(ref image_dl) = self.image_dl {
+            match image_dl.progress() {
+                Progress::Complete => true,
+                _ => false
+            }
+        } else {
+            false
+        };
+
+        if take_image_dl {
+            if let Some(image_dl) = self.image_dl.take() {
+                if let Some(texture) = renderer.load_texture(&Path::new(&self.config.image)).ok() {
+                    self.image = Some(ScaledTexture::new(texture));
+                }
+            }
+        }
+
+        let take_doperoms = if let Some(ref doperoms) = self.doperoms {
+            match doperoms.progress() {
+                Progress::Complete => true,
+                _ => false
+            }
+        } else {
+            false
+        };
+
+        if take_doperoms {
+            if let Some(doperoms) = self.doperoms.take() {
+                let mut dir = String::new();
+                if let Some(dir_path) = Path::new(&self.config.file).parent() {
+                    if let Some(dir_str) = dir_path.to_str() {
+                        dir = dir_str.to_string();
+                    }
+                }
+
+                match Command::new("7z").arg("x").arg(&format!("-o{}", dir)).arg(&self.config.file).status() {
+                    Ok(status) => {
+                        println!("7z: {}", status);
+
+                        if status.success() {
+                            for file in ls(&dir) {
+                                if file.ends_with(".jpg") || file.ends_with(".7z") || file.ends_with(".zip") {
+                                } else {
+                                    self.config.file = file;
+                                }
+                            }
+                        }
+                    },
+                    Err(err) => println!("7z: {:?}", err)
+                }
+            }
+        }
+    }
 }
 
 #[derive(RustcDecodable)]
@@ -245,22 +320,22 @@ struct Emulator {
 impl Emulator {
     pub fn new(renderer: &Renderer, font: &Font, config: EmulatorConfig) -> Emulator {
         let mut roms = Vec::new();
-        if let Ok(read_dir) = fs::read_dir(&config.roms) {
-            for entry_result in read_dir {
-                if let Ok(entry) = entry_result {
-                    if let Some(path) = entry.path().to_str() {
-                        roms.push(Rom::new(renderer, font, RomConfig {
-                            name: path.replace(&config.roms, "").trim_matches('/').to_string(),
-                            file: path.to_string() + "/rom.bin",
-                            image: path.to_string() + "/image.jpg",
-                            flags: Vec::new(),
-                        }))
-                    }
+        for path in ls(&config.roms) {
+            let mut rom = String::new();
+            for file in ls(&path) {
+                if file.ends_with(".jpg") || file.ends_with(".7z") || file.ends_with(".zip") {
+                } else {
+                    rom = file;
                 }
             }
-        }
 
-        roms.sort_by(|a, b| a.config.name.cmp(&b.config.name));
+            roms.push(Rom::new(renderer, RomConfig {
+                name: path.replace(&config.roms, "").trim_matches('/').to_string(),
+                file: rom,
+                image: path.to_string() + "/image.jpg",
+                flags: Vec::new(),
+            }));
+        }
 
         Emulator {
             name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
@@ -290,7 +365,7 @@ impl Emulator {
         println!("status: {}", command.status().unwrap());
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, renderer: &Renderer) {
         let take_doperoms = if let Some(ref doperoms) = self.doperoms {
             match doperoms.progress() {
                 Progress::Complete => true,
@@ -306,6 +381,10 @@ impl Emulator {
                     self.downloads.push(config);
                 }
             }
+        }
+
+        for mut rom in self.roms.iter_mut() {
+            rom.update(renderer);
         }
     }
 }
@@ -553,22 +632,24 @@ fn main(){
                             y += 96;
                         }
 
-                        if let Some(mut config) = download_option.take() {
+                        if let Some(config) = download_option.take() {
+                            let mut rom = Rom::new(&renderer, config);
                             {
                                 let mut image_path = PathBuf::from("roms");
                                 image_path.push(&key);
-                                image_path.push(&config.name);
+                                image_path.push(&rom.config.name);
                                 image_path.push("image.jpg");
-                                doperoms::Download::new(&config.image, &image_path).result();
-                                config.image = format!("roms/{}/{}/image.jpg", key, config.name);
+                                rom.image_dl = Some(doperoms::Download::new(&rom.config.image, &image_path));
+                                rom.config.image = format!("roms/{}/{}/image.jpg", key, rom.config.name);
                             }
-
-                            let mut rom = Rom::new(&renderer, &font, config);
-                            let mut rom_path = PathBuf::from("roms");
-                            rom_path.push(&key);
-                            rom_path.push(&rom.config.name);
-                            rom_path.push(&rom.config.file);
-                            rom.doperoms = Some(doperoms::Download::rom(&emulator.config.doperoms, &rom.config.file, &rom_path));
+                            {
+                                let mut rom_path = PathBuf::from("roms");
+                                rom_path.push(&key);
+                                rom_path.push(&rom.config.name);
+                                rom_path.push(&rom.config.file);
+                                rom.doperoms = Some(doperoms::Download::rom(&emulator.config.doperoms, &rom.config.file, &rom_path));
+                                rom.config.file = format!("roms/{}/{}/{}", key, rom.config.name, rom.config.file);
+                            }
                             emulator.roms.push(rom);
                         }
                     } else {
@@ -631,10 +712,11 @@ fn main(){
         renderer.present();
 
         if new_view != view {
+            offset = 0;
             view = new_view;
         } else {
             for (_, mut emulator) in emulators.iter_mut() {
-                emulator.update();
+                emulator.update(&renderer);
             }
 
             std::thread::sleep(Duration::from_millis(1000/60));
