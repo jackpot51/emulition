@@ -1,0 +1,95 @@
+[ds]
+name = "DS"
+doperoms = "Nintendo_Ds"
+image = "res/ds.png"
+roms = "roms/ds"
+program = "desmume"
+args = ["%r"]
+
+[dreamcast]
+name = "Dreamcast"
+doperoms = "Sega_Dreamcast"
+image = "res/dreamcast.png"
+roms = "roms/dreamcast"
+program = "lxdream"
+args = ["%r"]
+
+[gamecube]
+name = "Gamecube"
+doperoms = "Nintendo_Gamecube"
+image = "res/gamecube.png"
+roms = "roms/gamecube"
+program = "dolphin-emu"
+args = ["-b", "-e", "%r"]
+
+[gba]
+name = "Gameboy Advance"
+doperoms = "Gameboy_Advance_Gba"
+image = "res/gba.png"
+roms = "roms/gba"
+program = "mednafen"
+args = ["%r"]
+
+[gbc]
+name = "Gameboy Color"
+doperoms = "Gameboy_And_Gbc"
+image = "res/gbc.png"
+roms = "roms/gbc"
+program = "mednafen"
+args = ["%r"]
+
+[genesis]
+name = "Genesis"
+doperoms = "Sega_Genesis"
+image = "res/genesis.png"
+roms = "roms/genesis"
+program = "mednafen"
+args = ["%r"]
+
+[n64]
+name = "Nintendo 64"
+doperoms = "Nintendo_64"
+image = "res/n64.png"
+roms = "roms/n64"
+program = "mupen64plus"
+args = ["--fullscreen", "%r"]
+
+[nes]
+name = "NES"
+doperoms = "Nintendo_Nes"
+image = "res/nes.png"
+roms = "roms/nes"
+program = "mednafen"
+args = ["%r"]
+
+[psx]
+name = "PSX"
+doperoms = "Sony_Playstation_Psx"
+image = "res/psx.png"
+roms = "roms/psx"
+program = "mednafen"
+args = ["%r"]
+
+[ps2]
+name = "PS2"
+doperoms = "Sony_Playstation_2"
+image = "res/ps2.png"
+roms = "roms/ps2"
+program = "pcsx2"
+args = ["%r"]
+
+[snes]
+name = "SNES"
+doperoms = "Super_Nintendo_Snes"
+image = "res/snes.png"
+roms = "roms/snes"
+program = "mednafen"
+args = ["%r"]
+
+[wii]
+name = "Wii"
+doperoms = "Nintendo_Wii"
+image = "res/wii.png"
+roms = "roms/wii"
+program = "dolphin-emu"
+args = ["-b", "-e", "%r"]
