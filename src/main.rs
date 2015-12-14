@@ -424,7 +424,7 @@ fn main(){
 
     let mut emulators = BTreeMap::new();
 
-    if let Ok(mut file) = File::open("res/config.toml") {
+    if let Ok(mut file) = File::open("config.toml") {
         let mut toml = String::new();
         if let Ok(_) = file.read_to_string(&mut toml) {
             if let Some(parsed) = toml::Parser::new(&toml).parse() {

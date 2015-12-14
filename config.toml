@@ -6,6 +6,14 @@ roms = "roms/ds"
 program = "desmume"
 args = ["%r"]
 
+[dreamcast]
+name = "Dreamcast"
+doperoms = "Sega_Dreamcast"
+image = "res/dreamcast.png"
+roms = "roms/dreamcast"
+program = "lxdream"
+args = ["%r"]
+
 [gamecube]
 name = "Gamecube"
 doperoms = "Nintendo_Gamecube"
@@ -19,16 +27,24 @@ name = "Gameboy Advance"
 doperoms = "Gameboy_Advance_Gba"
 image = "res/gba.png"
 roms = "roms/gba"
-program = "vba"
-args = ["-F", "%r"]
+program = "mednafen"
+args = ["%r"]
 
 [gbc]
 name = "Gameboy Color"
 doperoms = "Gameboy_And_Gbc"
 image = "res/gbc.png"
 roms = "roms/gbc"
-program = "vba"
-args = ["-F", "%r"]
+program = "mednafen"
+args = ["%r"]
+
+[genesis]
+name = "Genesis"
+doperoms = "Sega_Genesis"
+image = "res/genesis.png"
+roms = "roms/genesis"
+program = "mednafen"
+args = ["%r"]
 
 [n64]
 name = "Nintendo 64"
@@ -43,15 +59,31 @@ name = "NES"
 doperoms = "Nintendo_Nes"
 image = "res/nes.png"
 roms = "roms/nes"
-program = "nestopia"
-args = ["-f", "%r"]
+program = "mednafen"
+args = ["%r"]
+
+[psx]
+name = "PSX"
+doperoms = "Sony_Playstation_Psx"
+image = "res/psx.png"
+roms = "roms/psx"
+program = "mednafen"
+args = ["%r"]
+
+[ps2]
+name = "PS2"
+doperoms = "Sony_Playstation_2"
+image = "res/ps2.png"
+roms = "roms/ps2"
+program = "pcsx2"
+args = ["%r"]
 
 [snes]
 name = "SNES"
 doperoms = "Super_Nintendo_Snes"
 image = "res/snes.png"
 roms = "roms/snes"
-program = "zsnes"
+program = "mednafen"
 args = ["%r"]
 
 [wii]
