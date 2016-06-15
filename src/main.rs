@@ -8,8 +8,9 @@ use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use sdl2::controller::{Axis, Button};
@@ -18,11 +19,19 @@ use sdl2::keyboard::Scancode;
 use sdl2::mouse::Mouse;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::{Renderer, Texture};
 
-use sdl2_image::LoadTexture;
+use cursor::Cursor;
+use emulator::{Emulator, EmulatorConfig};
+use font::Font;
+use rom::{Progress, Rom};
+use texture::NormalTexture;
 
+pub mod cursor;
 pub mod doperoms;
+pub mod emulator;
+pub mod font;
+pub mod rom;
+pub mod texture;
 
 pub fn ls(path: &str) -> Vec<String> {
     let mut entries = Vec::new();
@@ -40,353 +49,6 @@ pub fn ls(path: &str) -> Vec<String> {
     entries.sort();
 
     entries
-}
-
-struct NormalTexture {
-    texture: Texture
-}
-
-impl NormalTexture {
-    pub fn new(texture: Texture) -> NormalTexture {
-        NormalTexture {
-            texture: texture
-        }
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32) {
-        let query = self.texture.query();
-        renderer.copy(&self.texture, None, Rect::new(x, y, query.width, query.height).unwrap());
-    }
-}
-
-struct CenteredTexture {
-    texture: Texture
-}
-
-impl CenteredTexture {
-    pub fn new(texture: Texture) -> CenteredTexture {
-        CenteredTexture {
-            texture: texture
-        }
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
-        let query = self.texture.query();
-        let w2 = query.width as i32;
-        let h2 = query.height as i32;
-        let x2 = x + (w - w2)/2;
-        let y2 = y + (h - h2)/2;
-        if h2 > 0 && w2 > 0 {
-            renderer.copy(&self.texture, None, Rect::new(x2, y2, w2 as u32, h2 as u32).unwrap());
-        }
-    }
-}
-
-struct ScaledTexture {
-    texture: Texture
-}
-
-impl ScaledTexture {
-    pub fn new(texture: Texture) -> ScaledTexture {
-        ScaledTexture {
-            texture: texture
-        }
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer, x: i32, y: i32, w: i32, h: i32) {
-        let query = self.texture.query();
-        let aspect = query.width as f32 / query.height as f32;
-        let w2 = (aspect * h as f32).min(w as f32) as i32;
-        let h2 = (w as f32 / aspect).min(h as f32) as i32;
-        let x2 = x + (w - w2)/2;
-        let y2 = y + (h - h2)/2;
-        if h2 > 0 && w2 > 0 {
-            renderer.copy(&self.texture, None, Rect::new(x2, y2, w2 as u32, h2 as u32).unwrap());
-        }
-    }
-}
-
-
-struct Cursor {
-    pub x: f32,
-    pub y: f32,
-    texture: NormalTexture,
-}
-
-impl Cursor {
-    pub fn new(renderer: &Renderer, image: &str) -> Cursor {
-        Cursor {
-            x: 0.0,
-            y: 0.0,
-            texture: NormalTexture::new(renderer.load_texture(&Path::new(image)).unwrap()),
-        }
-    }
-
-    pub fn set(&mut self, renderer: &Renderer, x: f32, y: f32) {
-        self.x = x.max(0.0).min(renderer.output_size().unwrap().0 as f32);
-        self.y = y.max(0.0).min(renderer.output_size().unwrap().1 as f32);
-    }
-
-    pub fn offset(&mut self, renderer: &Renderer, dx: f32, dy: f32) {
-        let x = self.x + dx;
-        let y = self.y + dy;
-        self.set(renderer, x, y);
-    }
-
-    pub fn inside(&self, x: i32, y: i32, w: i32, h: i32) -> bool {
-        self.x >= x as f32 && self.x < (x as f32 + w as f32)
-        && self.y >= y as f32 && self.y < (y as f32 + h as f32)
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer) {
-        self.texture.draw(renderer, (self.x - 26.0) as i32, (self.y - 4.0) as i32);
-    }
-}
-
-struct Font {
-    font: sdl2_ttf::Font
-}
-
-impl Font {
-    pub fn new(font: &str, size: i32) -> Font {
-        Font {
-            font: sdl2_ttf::Font::from_file(&Path::new(font), size).unwrap()
-        }
-    }
-
-    pub fn render(&self, renderer: &Renderer, text: &str, color: Color) -> Texture {
-        let surface = self.font.render(text, sdl2_ttf::blended(color)).unwrap();
-        return renderer.create_texture_from_surface(&surface).unwrap();
-    }
-}
-
-#[derive(Clone)]
-pub enum Progress {
-    Connecting,
-    InProgress(u64, u64),
-    Error(String),
-    Complete,
-}
-
-#[derive(Clone, Debug)]
-pub enum RomFlags {
-    Alternate,
-    Bad,
-    Cracked,
-    Fix,
-    Good,
-    Hack,
-    OverDump,
-    PublicDomain,
-    Trainer,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct RomConfig {
-    pub name: String,
-    pub file: String,
-    pub image: String,
-    pub flags: Vec<RomFlags>,
-}
-
-struct Rom {
-    image: Option<ScaledTexture>,
-    image_dl: Option<doperoms::Download>,
-    doperoms: Option<doperoms::Download>,
-    config: RomConfig,
-}
-
-impl Rom {
-    pub fn new(renderer: &Renderer, config: RomConfig) -> Rom {
-        Rom {
-            image: if let Some(texture) = renderer.load_texture(&Path::new(&config.image)).ok() {
-                Some(ScaledTexture::new(texture))
-            } else {
-                None
-            },
-            image_dl: None,
-            doperoms: None,
-            config: config
-        }
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
-        let text = if let Some(ref doperoms) = self.doperoms {
-            match doperoms.progress() {
-                Progress::Connecting => format!("{}: ...", self.config.name),
-                Progress::InProgress(downloaded, total) => {
-                    if total > 0 {
-                        let ratio = downloaded as f64 / total as f64;
-                        let pixels = (w as f64 * ratio) as u32;
-                        if pixels > 0 {
-                            renderer.set_draw_color(Color::RGB(0, 255, 0));
-                            renderer.fill_rect(Rect::new(x, y, pixels, 32).unwrap().unwrap());
-                        }
-                        format!("{}: {:.1}%", self.config.name, ratio * 100.0)
-                    } else {
-                        format!("{}: ?%", self.config.name)
-                    }
-                },
-                Progress::Error(error) => format!("{}: {}", self.config.name, error),
-                Progress::Complete => format!("{}: Complete", self.config.name)
-            }
-        } else {
-            format!("{}", self.config.name)
-        };
-
-        let texture = CenteredTexture::new(font.render(&renderer, &text, Color::RGB(0, 0, 0)));
-        texture.draw(renderer, x + 8, y + 4, w - 16, 24);
-
-        if let Some(ref image) = self.image {
-            image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
-        }
-    }
-
-    pub fn update(&mut self, renderer: &Renderer){
-        let take_image_dl = if let Some(ref image_dl) = self.image_dl {
-            match image_dl.progress() {
-                Progress::Complete => true,
-                _ => false
-            }
-        } else {
-            false
-        };
-
-        if take_image_dl {
-            if let Some(image_dl) = self.image_dl.take() {
-                if let Some(texture) = renderer.load_texture(&Path::new(&self.config.image)).ok() {
-                    self.image = Some(ScaledTexture::new(texture));
-                }
-            }
-        }
-
-        let take_doperoms = if let Some(ref doperoms) = self.doperoms {
-            match doperoms.progress() {
-                Progress::Complete => true,
-                _ => false
-            }
-        } else {
-            false
-        };
-
-        if take_doperoms {
-            if let Some(doperoms) = self.doperoms.take() {
-                let mut dir = String::new();
-                if let Some(dir_path) = Path::new(&self.config.file).parent() {
-                    if let Some(dir_str) = dir_path.to_str() {
-                        dir = dir_str.to_string();
-                    }
-                }
-
-                match Command::new("7z").arg("x").arg(&format!("-o{}", dir)).arg(&self.config.file).status() {
-                    Ok(status) => {
-                        println!("7z: {}", status);
-
-                        if status.success() {
-                            for file in ls(&dir) {
-                                if file.ends_with(".jpg") || file.ends_with(".7z") || file.ends_with(".zip") {
-                                } else {
-                                    self.config.file = file;
-                                }
-                            }
-                        }
-                    },
-                    Err(err) => println!("7z: {:?}", err)
-                }
-            }
-        }
-    }
-}
-
-#[derive(RustcDecodable)]
-struct EmulatorConfig {
-    pub name: String,
-    pub image: String,
-    pub roms: String,
-    pub program: String,
-    pub args: Vec<String>,
-    pub doperoms: String,
-}
-
-struct Emulator {
-    name: CenteredTexture,
-    image: ScaledTexture,
-    roms: Vec<Rom>,
-    doperoms: Option<doperoms::List>,
-    downloads: Vec<RomConfig>,
-    config: EmulatorConfig
-}
-
-impl Emulator {
-    pub fn new(renderer: &Renderer, font: &Font, config: EmulatorConfig) -> Emulator {
-        let mut roms = Vec::new();
-        for path in ls(&config.roms) {
-            let mut rom = String::new();
-            for file in ls(&path) {
-                if file.ends_with(".jpg") || file.ends_with(".7z") || file.ends_with(".zip") {
-                } else {
-                    rom = file;
-                }
-            }
-
-            roms.push(Rom::new(renderer, RomConfig {
-                name: path.replace(&config.roms, "").trim_matches('/').to_string(),
-                file: rom,
-                image: path.to_string() + "/image.jpg",
-                flags: Vec::new(),
-            }));
-        }
-
-        Emulator {
-            name: CenteredTexture::new(font.render(&renderer, &config.name, Color::RGB(0, 0, 0))),
-            image: ScaledTexture::new(renderer.load_texture(&Path::new(&config.image)).unwrap()),
-            roms: roms,
-            doperoms: Some(doperoms::List::new(&config.doperoms)),
-            downloads: Vec::new(),
-            config: config
-        }
-    }
-
-    pub fn draw(&self, renderer: &mut Renderer, font: &Font, x: i32, y: i32, w: i32, h: i32) {
-        self.name.draw(renderer, x + 8, y + 4, w - 16, 24);
-        self.image.draw(renderer, x + 8, y + 8 + 32, w - 16, h - 32 - 16);
-    }
-
-    pub fn run(&self, rom: &Rom){
-        let mut command = Command::new(&self.config.program);
-        for arg in self.config.args.iter() {
-            if arg == "%r" {
-                command.arg(&rom.config.file);
-            }else{
-                command.arg(arg);
-            }
-        }
-
-        println!("status: {}", command.status().unwrap());
-    }
-
-    pub fn update(&mut self, renderer: &Renderer) {
-        let take_doperoms = if let Some(ref doperoms) = self.doperoms {
-            match doperoms.progress() {
-                Progress::Complete => true,
-                _ => false
-            }
-        } else {
-            false
-        };
-
-        if take_doperoms {
-            if let Some(doperoms) = self.doperoms.take() {
-                for config in doperoms.result() {
-                    self.downloads.push(config);
-                }
-            }
-        }
-
-        for mut rom in self.roms.iter_mut() {
-            rom.update(renderer);
-        }
-    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -436,6 +98,8 @@ fn main(){
             }
         }
     }
+
+    let playing_rom = Arc::new(Mutex::new(None));
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
@@ -535,7 +199,28 @@ fn main(){
                             renderer.fill_rect(Rect::new(x, y, s as u32, s as u32).unwrap().unwrap());
 
                             if forward {
-                                emulator.run(rom);
+                                let can_run = playing_rom.lock().unwrap().is_none();
+                                if can_run {
+                                    let mut command = emulator.run(rom);
+
+                                    println!("launching: {:?}", command);
+                                    match command.spawn() {
+                                        Ok(mut child) => {
+                                            *playing_rom.lock().unwrap() = Some(rom.config.name.clone());
+
+                                            let playing_rom_clone = playing_rom.clone();
+                                            thread::spawn(move || {
+                                                println!("exited: {:?}", child.wait());
+                                                *playing_rom_clone.lock().unwrap() = None;
+                                            });
+                                        },
+                                        Err(err) => {
+                                            println!("error: {:?}", err);
+                                        }
+                                    }
+                                } else {
+                                    println!("Emulator already running");
+                                }
                             }
                         }
 
@@ -611,6 +296,21 @@ fn main(){
                     if downloads {
                         let mut download_option = None;
                         for rom in emulator.downloads.iter() {
+
+                            if y + 32 >= 0 && y < height {
+                                if cursor.inside(x, y, width - x, 32) {
+                                    renderer.set_draw_color(highlight_color);
+                                    renderer.fill_rect(Rect::new(x, y, (width - x) as u32, 32).unwrap().unwrap());
+                                    if forward {
+                                        download_option = Some(rom.clone());
+                                    }
+                                }
+
+                                let texture = NormalTexture::new(font.render(&renderer, &format!("{}", rom.file) , Color::RGB(0, 0, 0)));
+                                texture.draw(&mut renderer, x + 8, y + 4);
+                            }
+                            y += 32;
+                            /*
                             if y + 96 >= 0 && y < height {
                                 if cursor.inside(x, y, width - x, 96) {
                                     renderer.set_draw_color(highlight_color);
@@ -630,6 +330,7 @@ fn main(){
                                 texture.draw(&mut renderer, x + 8 + 64, y + 4 + 64);
                             }
                             y += 96;
+                            */
                         }
 
                         if let Some(config) = download_option.take() {

@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use super::{Progress, RomConfig, RomFlags};
+use rom::{Progress, RomConfig, RomFlags};
 
 trait FindFrom {
     fn find_from(&self, pat: &str, start: usize) -> Option<usize>;

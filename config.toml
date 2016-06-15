@@ -52,7 +52,7 @@ doperoms = "Nintendo_64"
 image = "res/n64.png"
 roms = "roms/n64"
 program = "mupen64plus"
-args = ["--fullscreen", "%r"]
+args = ["--windowed", "%r"]
 
 [nes]
 name = "NES"
