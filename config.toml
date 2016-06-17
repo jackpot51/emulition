@@ -3,8 +3,8 @@ name = "DS"
 doperoms = "Nintendo_Ds"
 image = "res/ds.png"
 roms = "roms/ds"
-program = "desmume"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/desmume_libretro.so", "%r"]
 
 [dreamcast]
 name = "Dreamcast"
@@ -27,48 +27,48 @@ name = "Gameboy Advance"
 doperoms = "Gameboy_Advance_Gba"
 image = "res/gba.png"
 roms = "roms/gba"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/vba_next_libretro.so", "%r"]
 
 [gbc]
 name = "Gameboy Color"
 doperoms = "Gameboy_And_Gbc"
 image = "res/gbc.png"
 roms = "roms/gbc"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/vba_next_libretro.so", "%r"]
 
 [genesis]
 name = "Genesis"
 doperoms = "Sega_Genesis"
 image = "res/genesis.png"
 roms = "roms/genesis"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/genesis_plus_gx_libretro.so", "%r"]
 
 [n64]
 name = "Nintendo 64"
 doperoms = "Nintendo_64"
 image = "res/n64.png"
 roms = "roms/n64"
-program = "mupen64plus"
-args = ["--windowed", "%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/mupen64plus_libretro.so", "%r"]
 
 [nes]
 name = "NES"
 doperoms = "Nintendo_Nes"
 image = "res/nes.png"
 roms = "roms/nes"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/fceumm_libretro.so", "%r"]
 
 [psx]
 name = "PSX"
 doperoms = "Sony_Playstation_Psx"
 image = "res/psx.png"
 roms = "roms/psx"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/mednafen_psx_libretro.so", "%r"]
 
 [ps2]
 name = "PS2"
@@ -83,8 +83,8 @@ name = "SNES"
 doperoms = "Super_Nintendo_Snes"
 image = "res/snes.png"
 roms = "roms/snes"
-program = "mednafen"
-args = ["%r"]
+program = "retroarch"
+args = ["-L", "/usr/lib/libretro/snes9x_next_libretro.so", "%r"]
 
 [wii]
 name = "Wii"

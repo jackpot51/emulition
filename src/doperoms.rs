@@ -191,7 +191,8 @@ impl List {
                             },
                             Err(err) => {
                                 if let Ok(mut progress) = progress_child.lock() {
-                                    *progress = Progress::Error(format!("{:?}", err));
+                                    println!("list res.read_to_string: {}", err);
+                                    *progress = Progress::Error(format!("{}", err));
                                 }
                                 break 'downloading;
                             }
@@ -199,7 +200,8 @@ impl List {
                     },
                     Err(err) => {
                         if let Ok(mut progress) = progress_child.lock() {
-                            *progress = Progress::Error(format!("{:?}", err));
+                            println!("list client send: {}", err);
+                            *progress = Progress::Error(format!("{}", err));
                         }
                         break 'downloading;
                     }
@@ -218,7 +220,7 @@ impl List {
     pub fn progress(&self) -> Progress {
         match self.progress.lock() {
             Ok(progress) => progress.clone(),
-            Err(err) => Progress::Error(format!("{:?}", err))
+            Err(err) => Progress::Error(format!("{}", err))
         }
     }
 
@@ -245,13 +247,16 @@ impl Download {
 
         let result = thread::spawn(move || {
             if let Some(parent) = path_child.parent() {
-                match fs::create_dir_all(parent) {
-                    Ok(_) => (),
-                    Err(err) => {
-                        if let Ok(mut progress) = progress_child.lock() {
-                            *progress = Progress::Error(format!("{:?}", err));
+                if ! parent.is_dir() {
+                    match fs::create_dir_all(parent) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            println!("create dir: {}", err);
+                            if let Ok(mut progress) = progress_child.lock() {
+                                *progress = Progress::Error(format!("{}", err));
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
             }
@@ -289,34 +294,43 @@ impl Download {
                                                     }
                                                 },
                                                 Err(err) => {
+                                                    println!("file write: {}", err);
                                                     if let Ok(mut progress) = progress_child.lock() {
-                                                        *progress = Progress::Error(format!("{:?}", err));
+                                                        *progress = Progress::Error(format!("{}", err));
                                                     }
                                                     break 'downloading;
                                                 }
                                             }
                                         }
                                         Err(err) => {
+                                            println!("res read: {}", err);
                                             if let Ok(mut progress) = progress_child.lock() {
-                                                *progress = Progress::Error(format!("{:?}", err));
+                                                *progress = Progress::Error(format!("{}", err));
                                             }
                                             break 'downloading;
                                         }
                                     }
                                 }
                             } else {
+                                println!("no content length");
                                 if let Ok(mut progress) = progress_child.lock() {
                                     *progress = Progress::Error("No ContentLength".to_string());
                                 }
                             }
                         },
-                        Err(err) => if let Ok(mut progress) = progress_child.lock() {
-                            *progress = Progress::Error(format!("{:?}", err));
+                        Err(err) => {
+                            println!("client send: {}", err);
+                            if let Ok(mut progress) = progress_child.lock() {
+                                *progress = Progress::Error(format!("{}", err));
+                            }
                         }
                     }
                 },
-                Err(err) => if let Ok(mut progress) = progress_child.lock() {
-                    *progress = Progress::Error(format!("{:?}", err));
+                Err(err) => {
+                    println!("file open: {}", err);
+                    if let Ok(mut progress) = progress_child.lock() {
+                        *progress = Progress::Error(format!("{}", err));
+                    }
                 }
             }
         });
@@ -337,7 +351,7 @@ impl Download {
     pub fn progress(&self) -> Progress {
         match self.progress.lock() {
             Ok(progress) => progress.clone(),
-            Err(err) => Progress::Error(format!("{:?}", err))
+            Err(err) => Progress::Error(format!("{}", err))
         }
     }
 

@@ -219,7 +219,7 @@ fn main(){
                                         }
                                     }
                                 } else {
-                                    println!("Emulator already running");
+                                    println!("emulator already running: {:?}", *playing_rom.lock().unwrap());
                                 }
                             }
                         }
@@ -334,24 +334,42 @@ fn main(){
                         }
 
                         if let Some(config) = download_option.take() {
-                            let mut rom = Rom::new(&renderer, config);
-                            {
-                                let mut image_path = PathBuf::from("roms");
-                                image_path.push(&key);
-                                image_path.push(&rom.config.name);
-                                image_path.push("image.jpg");
-                                rom.image_dl = Some(doperoms::Download::new(&rom.config.image, &image_path));
-                                rom.config.image = format!("roms/{}/{}/image.jpg", key, rom.config.name);
+                            let mut exists = false;
+                            for rom in emulator.roms.iter() {
+                                if rom.config.name == config.name {
+                                    exists = true;
+                                }
                             }
-                            {
-                                let mut rom_path = PathBuf::from("roms");
-                                rom_path.push(&key);
-                                rom_path.push(&rom.config.name);
-                                rom_path.push(&rom.config.file);
-                                rom.doperoms = Some(doperoms::Download::rom(&emulator.config.doperoms, &rom.config.file, &rom_path));
-                                rom.config.file = format!("roms/{}/{}/{}", key, rom.config.name, rom.config.file);
+
+                            if ! exists {
+                                let mut rom = Rom::new(&renderer, config);
+
+                                {
+                                    let mut image_path = PathBuf::from("roms");
+                                    image_path.push(&key);
+                                    image_path.push(&rom.config.name);
+                                    image_path.push("image.jpg");
+                                    if ! image_path.is_file() {
+                                        rom.image_dl = Some(doperoms::Download::new(&rom.config.image, &image_path));
+                                    }
+                                    rom.config.image = format!("roms/{}/{}/image.jpg", key, rom.config.name);
+                                }
+
+                                {
+                                    let mut rom_path = PathBuf::from("roms");
+                                    rom_path.push(&key);
+                                    rom_path.push(&rom.config.name);
+                                    rom_path.push(&rom.config.file);
+                                    if ! rom_path.is_file() {
+                                        rom.doperoms = Some(doperoms::Download::rom(&emulator.config.doperoms, &rom.config.file, &rom_path));
+                                    }
+                                    rom.config.file = format!("roms/{}/{}/{}", key, rom.config.name, rom.config.file);
+                                }
+
+                                emulator.roms.push(rom);
+                            } else {
+                                println!("already downloaded {}", config.file);
                             }
-                            emulator.roms.push(rom);
                         }
                     } else {
                         for index in 0 .. emulator.roms.len() {

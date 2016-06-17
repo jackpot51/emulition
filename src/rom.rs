@@ -143,7 +143,7 @@ impl Rom {
                             }
                         }
                     },
-                    Err(err) => println!("7z: {:?}", err)
+                    Err(err) => println!("7z: {}", err)
                 }
             }
         }
