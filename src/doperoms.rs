@@ -1,7 +1,7 @@
 extern crate reqwest;
 extern crate url;
 
-use self::reqwest::Client;
+use self::reqwest::ClientBuilder;
 use self::reqwest::header::{CONNECTION, CONTENT_LENGTH, REFERER};
 
 use std::fs::{self, File};
@@ -162,7 +162,9 @@ impl List {
         let result = thread::spawn(move || -> Vec<RomConfig> {
             let mut roms = Vec::new();
 
-            let client = Client::new();
+            let client = ClientBuilder::new()
+                .gzip(false)
+                .build().unwrap();
             let mut next_index = 0;
             'downloading: loop {
                 match client
@@ -263,7 +265,8 @@ impl Download {
 
             match File::create(&path_child) {
                 Ok(mut file) => {
-                    match Client::new()
+                    match ClientBuilder::new()
+                            .build().unwrap()
                             .get(&url_child)
                             .header(CONNECTION, "keep-alive")
                             .header(REFERER, "https://doperoms.com/")
