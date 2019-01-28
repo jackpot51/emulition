@@ -1,8 +1,8 @@
-extern crate hyper;
+extern crate reqwest;
 extern crate url;
 
-use self::hyper::Client;
-use self::hyper::header::{Connection, ContentLength, Referer};
+use self::reqwest::Client;
+use self::reqwest::header::{CONNECTION, CONTENT_LENGTH, REFERER};
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -93,7 +93,7 @@ fn parse(html: &str, roms: &mut Vec<RomConfig>) -> Page {
         }
 
         if line.find("<td height=\"40\" align=\"left\" valign=\"middle\" nowrap=\"nowrap\">").is_some() {
-            if let Some(p) = line.find_skip("<img src=\"http://www.doperoms.com/") {
+            if let Some(p) = line.find_skip("<img src=\"https://www.doperoms.com/") {
                 if let Some(n) = line.find_from(".gif\" ", p) {
                     let flag = line[p .. n].to_string();
                     if flag == "good" {
@@ -166,15 +166,15 @@ impl List {
             let mut next_index = 0;
             'downloading: loop {
                 match client
-                    .get(&format!("http://doperoms.com/roms/{}/{}.html", system_child, next_index))
-                    .header(Connection::keep_alive())
-                    .header(Referer("http://www.doperoms.com/".to_string()))
+                    .get(&format!("https://doperoms.com/roms/{}/ALL/{}.html", system_child, next_index))
+                    .header(CONNECTION, "keep-alive")
+                    .header(REFERER, "https://www.doperoms.com/")
                     .send()
+                    .and_then(|x| x.error_for_status())
                 {
                     Ok(mut res) => {
-                        let mut html = String::new();
-                        match res.read_to_string(&mut html) {
-                            Ok(_) => {
+                        match res.text() {
+                            Ok(html) => {
                                 let page = parse(&html, &mut roms);
 
                                 if let Ok(mut progress) = progress_child.lock() {
@@ -191,7 +191,7 @@ impl List {
                             },
                             Err(err) => {
                                 if let Ok(mut progress) = progress_child.lock() {
-                                    println!("list res.read_to_string: {}", err);
+                                    println!("list res.text: {}", err);
                                     *progress = Progress::Error(format!("{}", err));
                                 }
                                 break 'downloading;
@@ -265,18 +265,22 @@ impl Download {
                 Ok(mut file) => {
                     match Client::new()
                             .get(&url_child)
-                            .header(Connection::keep_alive())
-                            .header(Referer("http://doperoms.com/".to_string()))
+                            .header(CONNECTION, "keep-alive")
+                            .header(REFERER, "https://doperoms.com/")
                             .send()
                     {
                         Ok(mut res) => {
-                            if let Some(&ContentLength(total)) = res.headers.get() {
+                            if let Some(total) = res.headers()
+                                .get(CONTENT_LENGTH)
+                                .and_then(|x| x.to_str().ok())
+                                .and_then(|x| x.parse().ok())
+                            {
                                 let mut downloaded = 0;
                                 if let Ok(mut progress) = progress_child.lock() {
                                     *progress = Progress::InProgress(downloaded, total);
                                 }
 
-                                let mut bytes = [0; 65536];
+                                let mut bytes = [0; 4096];
                                 'downloading: loop {
                                     match res.read(&mut bytes) {
                                         Ok(0) => {
@@ -343,7 +347,7 @@ impl Download {
 
     pub fn rom(system: &str, rom: &str, path: &Path) -> Download {
         Download::new(
-            &format!("http://doperoms.com/files/roms/{}/GETFILE_{}", system, url::percent_encoding::utf8_percent_encode(rom, url::percent_encoding::DEFAULT_ENCODE_SET)),
+            &format!("https://doperoms.com/files/roms/{}/GETFILE_{}", system, url::percent_encoding::utf8_percent_encode(rom, url::percent_encoding::DEFAULT_ENCODE_SET)),
             path
         )
     }

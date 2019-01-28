@@ -1,3 +1,6 @@
+extern crate env_logger;
+#[macro_use]
+extern crate log;
 extern crate rustc_serialize;
 extern crate sdl2;
 extern crate sdl2_image;
@@ -59,6 +62,8 @@ enum View {
 }
 
 fn main(){
+    env_logger::init();
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let controller_subsystem = sdl_context.game_controller().unwrap();
